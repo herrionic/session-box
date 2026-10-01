@@ -1,6 +1,10 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+// In the containerised dev topology the API lives in the sibling "server"
+// container, not on 127.0.0.1 (compose.dev.yml overrides this variable).
+const apiTarget = process.env.VITE_API_PROXY_TARGET ?? "http://127.0.0.1:8787";
+
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -8,7 +12,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:8787",
+        target: apiTarget,
         changeOrigin: true,
         ws: true,
       },
