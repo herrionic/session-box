@@ -1,0 +1,25 @@
+node_modules/
+dist/
+out/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# local state
+data/
+*.sqlite
+*.sqlite-journal
+*.db
+
+# secrets / env
+.env
+.env.local
+.env.*.local
+
+# logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db

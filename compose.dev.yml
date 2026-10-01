@@ -1,0 +1,46 @@
+# SessionBox — development topology (used together with docker-compose.yml):
+#
+#   docker compose -f docker-compose.yml -f compose.dev.yml up -d --build
+#
+# Source is bind-mounted from the synced repository. Vite serves the UI with
+# HMR on :5173 and proxies /api to the server container.
+# Anonymous volumes keep container-built node_modules from being hidden by the
+# bind mounts.
+
+services:
+  server:
+    build:
+      context: .
+      target: dev
+    command: ["pnpm", "--filter", "@sessionbox/server", "dev"]
+    environment:
+      NODE_ENV: development
+      SESSIONBOX_LOG_LEVEL: debug
+      # Let Vite serve the UI in dev; the container serves no static files.
+      SESSIONBOX_WEB_DIST: ""
+    volumes:
+      - ./apps:/repo/apps
+      - ./packages:/repo/packages
+      - ./tsconfig.base.json:/repo/tsconfig.base.json:ro
+      - /repo/apps/server/node_modules
+      - /repo/apps/web/node_modules
+      - /repo/packages/protocol/node_modules
+      - /repo/packages/shared/node_modules
+
+  web:
+    image: sessionbox/server:dev
+    command: ["pnpm", "--filter", "@sessionbox/web", "dev", "--host", "0.0.0.0"]
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps:/repo/apps
+      - ./packages:/repo/packages
+      - /repo/apps/server/node_modules
+      - /repo/apps/web/node_modules
+      - /repo/packages/protocol/node_modules
+      - /repo/packages/shared/node_modules
+    networks:
+      - sessionbox

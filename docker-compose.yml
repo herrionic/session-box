@@ -1,0 +1,43 @@
+# SessionBox — production deployment.
+#
+#   cp .env.example .env   # set SESSIONBOX_MASTER_KEY
+#   docker compose up -d --build
+#
+# The server manages sandbox containers on this host through the mounted
+# Docker socket (docs/ADR/0002-deployment-dood.md). Sandbox SSH is never
+# published; all sandboxes join the shared "sessionbox" network below.
+
+name: sessionbox
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sessionbox/server:dev
+    restart: unless-stopped
+    ports:
+      - "${SESSIONBOX_PUBLISHED_PORT:-8787}:8787"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - sessionbox-data:/data
+    environment:
+      SESSIONBOX_HOST: "0.0.0.0"
+      SESSIONBOX_PORT: "8787"
+      SESSIONBOX_DATA_DIR: /data
+      SESSIONBOX_RUNTIME: docker
+      SESSIONBOX_DOCKER_SOCKET: /var/run/docker.sock
+      SESSIONBOX_DOCKER_NETWORK: sessionbox
+      SESSIONBOX_BASE_IMAGE: ${SESSIONBOX_BASE_IMAGE:-sessionbox/base:latest}
+      SESSIONBOX_LOG_LEVEL: ${SESSIONBOX_LOG_LEVEL:-info}
+      SESSIONBOX_MASTER_KEY: ${SESSIONBOX_MASTER_KEY:?set SESSIONBOX_MASTER_KEY in .env}
+    networks:
+      - sessionbox
+
+networks:
+  sessionbox:
+    name: sessionbox
+    driver: bridge
+
+volumes:
+  sessionbox-data:
