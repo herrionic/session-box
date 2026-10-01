@@ -1,26 +1,44 @@
 import { describe, expect, it } from "vitest";
+import { InMemoryCredentialStore } from "../src/credentials/store.ts";
 import { SessionBoxError } from "../src/errors.ts";
 import { InMemorySandboxRepository } from "../src/sandbox/repository.ts";
 import { SandboxService } from "../src/sandbox/service.ts";
 import { toPublicSandbox } from "../src/sandbox/types.ts";
+import { SSH_PRIVATE_KEY_CREDENTIAL } from "../src/ssh/keypair.ts";
 import { FakeRuntime } from "./helpers/fake-runtime.ts";
+import { FakeSshSessionFactory } from "./helpers/fake-ssh.ts";
 import { createTestLogger } from "./helpers/test-logger.ts";
 
-function createFixture(): {
+const TEST_MASTER_KEY = Buffer.alloc(32, 7);
+
+function createFixture(options: { masterKey?: Buffer | null } = {}): {
   runtime: FakeRuntime;
   repository: InMemorySandboxRepository;
+  credentials: InMemoryCredentialStore;
+  ssh: FakeSshSessionFactory;
   service: SandboxService;
 } {
+  const masterKey =
+    options.masterKey === undefined ? TEST_MASTER_KEY : (options.masterKey ?? undefined);
+
   const runtime = new FakeRuntime();
   const repository = new InMemorySandboxRepository();
+  const credentials = new InMemoryCredentialStore(masterKey);
+  const ssh = new FakeSshSessionFactory();
   const service = new SandboxService({
     runtime,
     repository,
+    credentials,
+    ssh,
     logger: createTestLogger(),
     baseImage: "sessionbox/base:test",
     workspace: "/workspace",
+    sshReadyTimeoutMs: 50,
+    sshRetryIntervalMs: 1,
+    sleep: async () => {},
   });
-  return { runtime, repository, service };
+
+  return { runtime, repository, credentials, ssh, service };
 }
 
 describe("SandboxService.create", () => {
@@ -38,6 +56,19 @@ describe("SandboxService.create", () => {
     expect(record.runtimeRef).toBe(`fake_${record.id}`);
     expect(runtime.containers.get(record.runtimeRef!)?.status).toBe("running");
     expect(runtime.createCalls[0]?.sandboxId).toBe(record.id);
+  });
+
+  it("stores an encrypted private key and injects only the public key", async () => {
+    const { service, runtime, credentials } = createFixture();
+
+    const record = await service.create({});
+
+    const publicKey = runtime.createCalls[0]?.env?.SESSIONBOX_AUTHORIZED_KEY;
+    expect(publicKey).toMatch(/^ssh-ed25519 /);
+
+    const stored = await credentials.read(record.id, SSH_PRIVATE_KEY_CREDENTIAL);
+    expect(stored).toContain("PRIVATE KEY");
+    expect(stored).not.toBe(publicKey);
   });
 
   it("honours requested name, image, resources and lifecycle", async () => {
@@ -81,6 +112,23 @@ describe("SandboxService.create", () => {
     const records = await service.list();
     expect(records[0]?.status).toBe("failed");
     expect(records[0]?.runtimeRef).toBe(`fake_${records[0]?.id}`);
+  });
+
+  it("fails the sandbox when SSH never becomes ready", async () => {
+    const { service, ssh } = createFixture();
+    ssh.alwaysFail = true;
+
+    await expect(service.create({})).rejects.toMatchObject({ code: "SANDBOX_CREATE_FAILED" });
+
+    const records = await service.list();
+    expect(records[0]?.status).toBe("failed");
+    expect(ssh.requests.length).toBeGreaterThan(0);
+  });
+
+  it("surfaces missing master keys as a configuration error", async () => {
+    const { service } = createFixture({ masterKey: null });
+
+    await expect(service.create({})).rejects.toMatchObject({ code: "INTERNAL_ERROR" });
   });
 });
 
@@ -147,6 +195,16 @@ describe("SandboxService lifecycle", () => {
 
     expect(runtime.containers.has(ref!)).toBe(false);
     await expect(service.get(record.id)).rejects.toMatchObject({ code: "SANDBOX_NOT_FOUND" });
+  });
+
+  it("removes stored credentials when a sandbox is deleted", async () => {
+    const { service, credentials } = createFixture();
+    const record = await service.create({});
+    expect(await credentials.read(record.id, SSH_PRIVATE_KEY_CREDENTIAL)).toBeDefined();
+
+    await service.remove(record.id);
+
+    expect(await credentials.read(record.id, SSH_PRIVATE_KEY_CREDENTIAL)).toBeUndefined();
   });
 
   it("keeps the record and surfaces a runtime error when deletion fails", async () => {

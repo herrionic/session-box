@@ -42,6 +42,11 @@ describe("loadConfig", () => {
     expect(config.docker.workspace).toBe("/work");
   });
 
+  it("reads the master key when it is configured", () => {
+    const config = loadConfig({ SESSIONBOX_MASTER_KEY: "c2VjcmV0" });
+    expect(config.masterKey).toBe("c2VjcmV0");
+  });
+
   it("rejects runtimes that are not implemented yet", () => {
     expect(() => loadConfig({ SESSIONBOX_RUNTIME: "kubernetes" })).toThrow(/not supported/);
   });

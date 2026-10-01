@@ -7,9 +7,13 @@ import {
   type UpdateSandboxSettingsRequest,
 } from "@sessionbox/protocol";
 import { newSandboxId, nowIso } from "@sessionbox/shared";
+import type { CredentialStore } from "../credentials/store.ts";
 import { SessionBoxError } from "../errors.ts";
 import type { Logger } from "../logging.ts";
 import { RuntimeNotFoundError, type SandboxRuntime } from "../runtime/types.ts";
+import { generateSshKeyPair, SSH_PRIVATE_KEY_CREDENTIAL } from "../ssh/keypair.ts";
+import { waitForSsh } from "../ssh/readiness.ts";
+import type { SshSessionFactory } from "../ssh/session.ts";
 import type { SandboxRepository } from "./repository.ts";
 import { assertOperationAllowed } from "./state.ts";
 import type { SandboxRecord } from "./types.ts";
@@ -17,9 +21,16 @@ import type { SandboxRecord } from "./types.ts";
 export interface SandboxServiceOptions {
   runtime: SandboxRuntime;
   repository: SandboxRepository;
+  credentials: CredentialStore;
+  ssh: SshSessionFactory;
   logger: Logger;
   baseImage: string;
   workspace: string;
+  /** How long to wait for sshd inside a new sandbox before failing. */
+  sshReadyTimeoutMs?: number;
+  sshRetryIntervalMs?: number;
+  /** Injectable for tests. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -29,18 +40,28 @@ export interface SandboxServiceOptions {
 export class SandboxService {
   private readonly runtime: SandboxRuntime;
   private readonly repository: SandboxRepository;
+  private readonly credentials: CredentialStore;
+  private readonly ssh: SshSessionFactory;
   private readonly logger: Logger;
   private readonly baseImage: string;
   private readonly workspace: string;
+  private readonly sshReadyTimeoutMs: number;
+  private readonly sshRetryIntervalMs: number;
+  private readonly sleep: ((ms: number) => Promise<void>) | undefined;
   /** Per-sandbox operation chains: serializes concurrent state changes. */
   private readonly chains = new Map<string, Promise<unknown>>();
 
   constructor(options: SandboxServiceOptions) {
     this.runtime = options.runtime;
     this.repository = options.repository;
+    this.credentials = options.credentials;
+    this.ssh = options.ssh;
     this.logger = options.logger;
     this.baseImage = options.baseImage;
     this.workspace = options.workspace;
+    this.sshReadyTimeoutMs = options.sshReadyTimeoutMs ?? 30_000;
+    this.sshRetryIntervalMs = options.sshRetryIntervalMs ?? 500;
+    this.sleep = options.sleep;
   }
 
   async create(request: CreateSandboxRequest): Promise<SandboxRecord> {
@@ -64,16 +85,31 @@ export class SandboxService {
     try {
       await this.runtime.ensureImage(record.image);
 
+      // One ephemeral SSH keypair per sandbox: the private key stays encrypted
+      // in the credential store, only the public key is injected into the
+      // container (PROJECT.md §14).
+      const keyPair = generateSshKeyPair();
+      await this.credentials.save(id, SSH_PRIVATE_KEY_CREDENTIAL, keyPair.privateKey);
+
       const created = await this.runtime.create({
         sandboxId: id,
         name: record.name,
         image: record.image,
         workspace: record.workspace,
         resources: record.resources,
+        env: { SESSIONBOX_AUTHORIZED_KEY: keyPair.publicKey },
       });
       record.runtimeRef = created.ref;
 
       await this.runtime.start(created.ref);
+      await waitForSsh({
+        factory: this.ssh,
+        sandboxId: id,
+        runtimeRef: created.ref,
+        timeoutMs: this.sshReadyTimeoutMs,
+        intervalMs: this.sshRetryIntervalMs,
+        ...(this.sleep !== undefined ? { sleep: this.sleep } : {}),
+      });
 
       record.status = "running";
       record.startedAt = nowIso();
@@ -88,6 +124,9 @@ export class SandboxService {
         { event: "sandbox.failed", sandboxId: id, err: errorMessage(error) },
         "sandbox creation failed",
       );
+      // Configuration errors (for example a missing master key) must not be
+      // disguised as runtime failures.
+      if (error instanceof SessionBoxError && error.code === "INTERNAL_ERROR") throw error;
       throw new SessionBoxError(
         "SANDBOX_CREATE_FAILED",
         "failed to create the sandbox; see server logs",
@@ -187,6 +226,7 @@ export class SandboxService {
         }
       }
 
+      await this.credentials.removeAll(id);
       await this.repository.delete(id);
       this.logger.info({ event: "sandbox.deleted", sandboxId: id }, "sandbox deleted");
     });

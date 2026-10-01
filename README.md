@@ -35,6 +35,14 @@ pnpm typecheck
 pnpm test
 ```
 
+Sandbox creation needs `SESSIONBOX_MASTER_KEY` (base64, 32 bytes) to encrypt
+per-sandbox SSH credentials:
+
+```bash
+openssl rand -base64 32
+# or: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
 Docker is not required for unit/HTTP tests (they run against `FakeRuntime`),
 but sandbox lifecycle, SSH/SFTP and the terminal need a Docker host.
 

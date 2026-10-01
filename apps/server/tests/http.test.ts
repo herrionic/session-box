@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ServerConfig } from "../src/config.ts";
+import { InMemoryCredentialStore } from "../src/credentials/store.ts";
 import { buildApp } from "../src/http/app.ts";
 import type { SessionBoxApp } from "../src/http/types.ts";
 import { InMemorySandboxRepository } from "../src/sandbox/repository.ts";
 import { SandboxService } from "../src/sandbox/service.ts";
 import { FakeRuntime } from "./helpers/fake-runtime.ts";
+import { FakeSshSessionFactory } from "./helpers/fake-ssh.ts";
 import { createTestLogger } from "./helpers/test-logger.ts";
 
 const testConfig: ServerConfig = {
@@ -30,9 +32,14 @@ describe("HTTP API", () => {
     const service = new SandboxService({
       runtime,
       repository: new InMemorySandboxRepository(),
+      credentials: new InMemoryCredentialStore(Buffer.alloc(32, 1)),
+      ssh: new FakeSshSessionFactory(),
       logger: createTestLogger(),
       baseImage: testConfig.docker.baseImage,
       workspace: testConfig.docker.workspace,
+      sshReadyTimeoutMs: 50,
+      sshRetryIntervalMs: 1,
+      sleep: async () => {},
     });
     app = await buildApp({
       config: testConfig,

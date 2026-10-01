@@ -84,21 +84,29 @@ per sandbox, so concurrent start/stop/delete calls cannot interleave.
 
 ## 5. Sandbox creation flow (current)
 
-```
+```text
 POST /api/sandboxes
    │  id, name, image, resources, lifecycle defaults
    ▼
 SandboxService.create
    │  runtime.ensureImage(image)
-   │  runtime.create(spec)        # labels: sessionbox.managed, .sandbox-id, .version
-   │  runtime.start(ref)         # capabilities dropped, no-new-privileges,
-   ▼                             # pids/memory/cpu limits, private bridge network
+   │  generate ephemeral ed25519 keypair (per sandbox)
+   │  credentials.save(encrypted private key)      # AES-256-GCM, master key
+   │  runtime.create(spec, env:SESSIONBOX_AUTHORIZED_KEY = public key)
+   │  runtime.start(ref)                            # labels: sessionbox.managed,
+   │                                                # .sandbox-id, .version
+   │  waitForSsh(...)                               # sshd readiness probe
+   ▼
 status = running
 ```
 
-Day 2 adds: ephemeral SSH keypair, encrypted credential storage, public-key
-injection via `SESSIONBOX_AUTHORIZED_KEY`, and an SSH readiness probe before
-marking the sandbox `running`.
+Sandbox containers drop all capabilities except the minimum sshd needs,
+disable privilege escalation, get PID/memory/CPU limits, join the dedicated
+bridge network and never publish ports.
+
+The private key lives only in the credential store (encrypted with
+`SESSIONBOX_MASTER_KEY`); the HTTP API never returns it. Deleting a sandbox
+removes the credential entry.
 
 ## 6. Persistence and recovery
 
@@ -114,6 +122,8 @@ marking the sandbox `running`.
 - Sandbox containers: non-root user, all capabilities dropped except the
   minimum sshd needs, `no-new-privileges`, PID/memory/CPU limits, no socket,
   no published ports, dedicated bridge network.
+- Per-sandbox SSH credentials: ephemeral ed25519 keypair, private key sealed
+  with AES-256-GCM, never returned through the API.
 - The server container: trusted management plane, holds the Docker socket
   (host-root-equivalent). This is documented in ADR-0002.
 - Docker isolation is a development/agent-environment boundary, **not** a
@@ -123,7 +133,7 @@ marking the sandbox `running`.
 
 | Level | What | Where |
 | --- | --- | --- |
-| Unit | protocol schemas, id helpers, state machine, service against `FakeRuntime`, error mapping, config | any machine (`pnpm test`) |
-| HTTP | full sandbox lifecycle through `app.inject` with `FakeRuntime` | any machine |
+| Unit | protocol schemas, ids, state machine, service against `FakeRuntime`, credential sealing, keypair format, path validation, readiness probe | any machine (`pnpm test`) |
+| HTTP | full sandbox lifecycle through `app.inject` with fakes | any machine |
 | Integration | Docker lifecycle, SSH/SFTP, PTY, ports/network | remote Docker host (Day 2+) |
 | Acceptance | simulated harness sessions (Day 4), real DSH/Pi adapters (when sources are available) | remote host |

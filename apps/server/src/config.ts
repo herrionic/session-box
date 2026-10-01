@@ -14,6 +14,8 @@ export interface ServerConfig {
   logLevel: string;
   dataDir: string;
   webDist?: string;
+  /** Raw SESSIONBOX_MASTER_KEY value; parsed and validated where it is used. */
+  masterKey?: string;
   docker: DockerRuntimeConfig;
 }
 
@@ -30,6 +32,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   }
 
   const webDist = env.SESSIONBOX_WEB_DIST?.trim();
+  const masterKey = env.SESSIONBOX_MASTER_KEY?.trim();
 
   return {
     host: env.SESSIONBOX_HOST?.trim() || "0.0.0.0",
@@ -38,6 +41,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     logLevel: env.SESSIONBOX_LOG_LEVEL?.trim() || "info",
     dataDir: env.SESSIONBOX_DATA_DIR?.trim() || "./data",
     ...(webDist ? { webDist } : {}),
+    ...(masterKey ? { masterKey } : {}),
     docker: {
       socketPath: env.SESSIONBOX_DOCKER_SOCKET?.trim() || "/var/run/docker.sock",
       networkName: env.SESSIONBOX_DOCKER_NETWORK?.trim() || "sessionbox",
