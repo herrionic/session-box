@@ -1,11 +1,13 @@
 import { loadConfig } from "./config.ts";
 import { parseMasterKey } from "./credentials/master-key.ts";
 import { InMemoryCredentialStore } from "./credentials/store.ts";
+import { SandboxFilesService } from "./files/service.ts";
 import { buildApp } from "./http/app.ts";
 import { createLogger } from "./logging.ts";
 import { createRuntime } from "./runtime/index.ts";
 import { InMemorySandboxRepository } from "./sandbox/repository.ts";
 import { SandboxService } from "./sandbox/service.ts";
+import { SshSessionManager } from "./ssh/manager.ts";
 import { Ssh2SessionFactory } from "./ssh/ssh2-session.ts";
 
 async function main(): Promise<void> {
@@ -24,17 +26,24 @@ async function main(): Promise<void> {
   const repository = new InMemorySandboxRepository();
   const credentials = new InMemoryCredentialStore(masterKey);
   const ssh = new Ssh2SessionFactory({ runtime, credentials, logger });
+  const sessions = new SshSessionManager(ssh, logger);
   const service = new SandboxService({
     runtime,
     repository,
     credentials,
     ssh,
+    sessions,
     logger,
     baseImage: config.docker.baseImage,
     workspace: config.docker.workspace,
   });
+  const files = new SandboxFilesService({
+    sandboxes: service,
+    workspace: config.docker.workspace,
+    logger,
+  });
 
-  const app = await buildApp({ config, logger, runtime, service });
+  const app = await buildApp({ config, logger, runtime, service, files });
 
   try {
     await service.reconcile();
@@ -51,6 +60,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ event: "server.shutdown", signal }, "shutting down");
     try {
+      await service.close();
       await app.close();
     } finally {
       process.exit(0);

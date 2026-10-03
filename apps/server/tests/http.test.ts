@@ -4,10 +4,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ServerConfig } from "../src/config.ts";
 import { InMemoryCredentialStore } from "../src/credentials/store.ts";
+import { SandboxFilesService } from "../src/files/service.ts";
 import { buildApp } from "../src/http/app.ts";
 import type { SessionBoxApp } from "../src/http/types.ts";
 import { InMemorySandboxRepository } from "../src/sandbox/repository.ts";
 import { SandboxService } from "../src/sandbox/service.ts";
+import { SshSessionManager } from "../src/ssh/manager.ts";
 import { FakeRuntime } from "./helpers/fake-runtime.ts";
 import { FakeSshSessionFactory } from "./helpers/fake-ssh.ts";
 import { createTestLogger } from "./helpers/test-logger.ts";
@@ -29,26 +31,36 @@ const testConfig: ServerConfig = {
 describe("HTTP API", () => {
   let app: SessionBoxApp;
   let runtime: FakeRuntime;
+  let files: SandboxFilesService;
 
   beforeEach(async () => {
     runtime = new FakeRuntime();
+    const logger = createTestLogger();
+    const ssh = new FakeSshSessionFactory();
     const service = new SandboxService({
       runtime,
       repository: new InMemorySandboxRepository(),
       credentials: new InMemoryCredentialStore(Buffer.alloc(32, 1)),
-      ssh: new FakeSshSessionFactory(),
-      logger: createTestLogger(),
+      ssh,
+      sessions: new SshSessionManager(ssh, logger),
+      logger,
       baseImage: testConfig.docker.baseImage,
       workspace: testConfig.docker.workspace,
       sshReadyTimeoutMs: 50,
       sshRetryIntervalMs: 1,
       sleep: async () => {},
     });
+    files = new SandboxFilesService({
+      sandboxes: service,
+      workspace: testConfig.docker.workspace,
+      logger,
+    });
     app = await buildApp({
       config: testConfig,
-      logger: createTestLogger(),
+      logger,
       runtime,
       service,
+      files,
     });
   });
 
@@ -190,12 +202,15 @@ describe("HTTP API with static web assets", () => {
     writeFileSync(join(webDir, "index.html"), "<!doctype html><title>SessionBox</title>");
 
     const runtime = new FakeRuntime();
+    const logger = createTestLogger();
+    const ssh = new FakeSshSessionFactory();
     const service = new SandboxService({
       runtime,
       repository: new InMemorySandboxRepository(),
       credentials: new InMemoryCredentialStore(Buffer.alloc(32, 1)),
-      ssh: new FakeSshSessionFactory(),
-      logger: createTestLogger(),
+      ssh,
+      sessions: new SshSessionManager(ssh, logger),
+      logger,
       baseImage: testConfig.docker.baseImage,
       workspace: testConfig.docker.workspace,
       sshReadyTimeoutMs: 50,
@@ -205,9 +220,14 @@ describe("HTTP API with static web assets", () => {
 
     app = await buildApp({
       config: { ...testConfig, webDist: webDir },
-      logger: createTestLogger(),
+      logger,
       runtime,
       service,
+      files: new SandboxFilesService({
+        sandboxes: service,
+        workspace: testConfig.docker.workspace,
+        logger,
+      }),
     });
   });
 

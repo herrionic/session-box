@@ -12,8 +12,9 @@ import { SessionBoxError } from "../errors.ts";
 import type { Logger } from "../logging.ts";
 import { RuntimeNotFoundError, type SandboxRuntime } from "../runtime/types.ts";
 import { generateSshKeyPair, SSH_PRIVATE_KEY_CREDENTIAL } from "../ssh/keypair.ts";
+import type { SshSessionManager } from "../ssh/manager.ts";
 import { waitForSsh } from "../ssh/readiness.ts";
-import type { SshSessionFactory } from "../ssh/session.ts";
+import type { SshSession, SshSessionFactory } from "../ssh/session.ts";
 import type { SandboxRepository } from "./repository.ts";
 import { assertOperationAllowed } from "./state.ts";
 import type { SandboxRecord } from "./types.ts";
@@ -23,6 +24,7 @@ export interface SandboxServiceOptions {
   repository: SandboxRepository;
   credentials: CredentialStore;
   ssh: SshSessionFactory;
+  sessions: SshSessionManager;
   logger: Logger;
   baseImage: string;
   workspace: string;
@@ -42,6 +44,7 @@ export class SandboxService {
   private readonly repository: SandboxRepository;
   private readonly credentials: CredentialStore;
   private readonly ssh: SshSessionFactory;
+  private readonly sessions: SshSessionManager;
   private readonly logger: Logger;
   private readonly baseImage: string;
   private readonly workspace: string;
@@ -56,6 +59,7 @@ export class SandboxService {
     this.repository = options.repository;
     this.credentials = options.credentials;
     this.ssh = options.ssh;
+    this.sessions = options.sessions;
     this.logger = options.logger;
     this.baseImage = options.baseImage;
     this.workspace = options.workspace;
@@ -159,6 +163,7 @@ export class SandboxService {
       record.startedAt = nowIso();
       record.stoppedAt = undefined;
       await this.repository.save(record);
+      await this.sessions.release(id);
 
       this.logger.info({ event: "sandbox.started", sandboxId: id }, "sandbox started");
       return record;
@@ -180,6 +185,7 @@ export class SandboxService {
       record.status = "stopped";
       record.stoppedAt = nowIso();
       await this.repository.save(record);
+      await this.sessions.release(id);
 
       this.logger.info({ event: "sandbox.stopped", sandboxId: id }, "sandbox stopped");
       return record;
@@ -202,6 +208,7 @@ export class SandboxService {
       record.startedAt = nowIso();
       record.stoppedAt = undefined;
       await this.repository.save(record);
+      await this.sessions.release(id);
 
       this.logger.info({ event: "sandbox.restarted", sandboxId: id }, "sandbox restarted");
       return record;
@@ -215,6 +222,7 @@ export class SandboxService {
 
       record.status = "deleting";
       await this.repository.save(record);
+      await this.sessions.release(id);
 
       if (record.runtimeRef !== undefined) {
         try {
@@ -261,6 +269,27 @@ export class SandboxService {
   }
 
   /**
+   * Opens (or reuses) an SSH session for a running sandbox. Shared by the file
+   * manager, the web terminal and (later) the agent gateway.
+   */
+  async withSshSession<T>(id: string, operation: (session: SshSession) => Promise<T>): Promise<T> {
+    const record = await this.require(id);
+    if (record.status !== "running") {
+      throw new SessionBoxError(
+        "SANDBOX_NOT_RUNNING",
+        `sandbox is ${record.status}; start it first`,
+      );
+    }
+    const ref = this.requireRef(record);
+    return this.sessions.withSession({ sandboxId: id, runtimeRef: ref }, operation);
+  }
+
+  /** Releases every cached SSH session (used on server shutdown). */
+  async close(): Promise<void> {
+    await this.sessions.releaseAll();
+  }
+
+  /**
    * Reconciles persisted state with the runtime after a server restart
    * (PROJECT.md §33). Containers that disappeared are marked `failed`;
    * containers that were started/stopped externally are synced.
@@ -284,6 +313,7 @@ export class SandboxService {
         if (record.status !== "failed") {
           record.status = "failed";
           await this.repository.save(record);
+          await this.sessions.release(record.id);
           this.logger.warn(
             { event: "sandbox.reconcile.missing", sandboxId: record.id },
             "sandbox container disappeared from the runtime",
@@ -297,6 +327,7 @@ export class SandboxService {
         record.status = status;
         if (actual.startedAt !== undefined) record.startedAt = actual.startedAt;
         await this.repository.save(record);
+        if (status === "stopped") await this.sessions.release(record.id);
         this.logger.info(
           { event: "sandbox.reconcile.status", sandboxId: record.id, status },
           "sandbox status reconciled from the runtime",

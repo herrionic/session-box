@@ -5,6 +5,7 @@ import { InMemorySandboxRepository } from "../src/sandbox/repository.ts";
 import { SandboxService } from "../src/sandbox/service.ts";
 import { toPublicSandbox } from "../src/sandbox/types.ts";
 import { SSH_PRIVATE_KEY_CREDENTIAL } from "../src/ssh/keypair.ts";
+import { SshSessionManager } from "../src/ssh/manager.ts";
 import { FakeRuntime } from "./helpers/fake-runtime.ts";
 import { FakeSshSessionFactory } from "./helpers/fake-ssh.ts";
 import { createTestLogger } from "./helpers/test-logger.ts";
@@ -24,13 +25,15 @@ function createFixture(options: { masterKey?: Buffer | null } = {}): {
   const runtime = new FakeRuntime();
   const repository = new InMemorySandboxRepository();
   const credentials = new InMemoryCredentialStore(masterKey);
+  const logger = createTestLogger();
   const ssh = new FakeSshSessionFactory();
   const service = new SandboxService({
     runtime,
     repository,
     credentials,
     ssh,
-    logger: createTestLogger(),
+    sessions: new SshSessionManager(ssh, logger),
+    logger,
     baseImage: "sessionbox/base:test",
     workspace: "/workspace",
     sshReadyTimeoutMs: 50,

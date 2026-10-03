@@ -6,9 +6,11 @@ import { ZodError } from "zod";
 import { newRequestId } from "@sessionbox/shared";
 import type { ServerConfig } from "../config.ts";
 import { SessionBoxError, isSessionBoxError } from "../errors.ts";
+import type { SandboxFilesService } from "../files/service.ts";
 import type { Logger } from "../logging.ts";
 import type { SandboxRuntime } from "../runtime/types.ts";
 import type { SandboxService } from "../sandbox/service.ts";
+import { registerFileRoutes } from "./routes/files.ts";
 import { registerHealthRoutes } from "./routes/health.ts";
 import { registerSandboxRoutes } from "./routes/sandboxes.ts";
 import type { SessionBoxApp } from "./types.ts";
@@ -18,6 +20,7 @@ export interface AppDependencies {
   logger: Logger;
   runtime: SandboxRuntime;
   service: SandboxService;
+  files: SandboxFilesService;
 }
 
 export async function buildApp(deps: AppDependencies): Promise<SessionBoxApp> {
@@ -28,6 +31,16 @@ export async function buildApp(deps: AppDependencies): Promise<SessionBoxApp> {
 
   registerHealthRoutes(app, { config: deps.config, runtime: deps.runtime });
   registerSandboxRoutes(app, { service: deps.service });
+  registerFileRoutes(app, { files: deps.files });
+
+  // Uploads arrive as raw bytes; everything else stays JSON.
+  app.addContentTypeParser(
+    "application/octet-stream",
+    { parseAs: "buffer" },
+    (_request, body, done) => {
+      done(null, body);
+    },
+  );
 
   const webDist = deps.config.webDist;
   const servesWeb = webDist !== undefined && existsSync(webDist);
