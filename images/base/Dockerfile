@@ -24,14 +24,23 @@ RUN apt-get update \
       tini \
  && rm -rf /var/lib/apt/lists/*
 
-# Non-root user that agent sessions log in as.
+# Non-root user that agent sessions log in as. The random password only serves
+# to unlock the account for sshd's account check; password authentication is
+# disabled in sshd-sessionbox.conf and the password is never disclosed.
 RUN useradd --create-home --shell /bin/bash --uid 1000 agent \
+ && echo "agent:$(head -c 24 /dev/urandom | base64)" | chpasswd \
  && mkdir -p /workspace \
  && chown agent:agent /workspace
 
 # Key-only authentication, no root login, no PAM (keeps the capability set small).
 COPY sshd-sessionbox.conf /etc/ssh/sshd_config.d/100-sessionbox.conf
-RUN mkdir -p /run/sshd
+
+# Fail the build if the sshd configuration is broken. Host keys are generated
+# for validation only and removed again so every sandbox gets unique ones.
+RUN mkdir -p /run/sshd \
+ && ssh-keygen -A \
+ && sshd -t \
+ && rm -f /etc/ssh/ssh_host_*
 
 COPY entrypoint.sh /usr/local/bin/sessionbox-entrypoint
 RUN chmod +x /usr/local/bin/sessionbox-entrypoint

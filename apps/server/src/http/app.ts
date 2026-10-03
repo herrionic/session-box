@@ -29,12 +29,13 @@ export async function buildApp(deps: AppDependencies): Promise<SessionBoxApp> {
   registerHealthRoutes(app, { config: deps.config, runtime: deps.runtime });
   registerSandboxRoutes(app, { service: deps.service });
 
-  let servesWeb = false;
-  if (deps.config.webDist !== undefined && existsSync(deps.config.webDist)) {
-    await app.register(fastifyStatic, { root: resolve(deps.config.webDist) });
-    servesWeb = true;
-  }
+  const webDist = deps.config.webDist;
+  const servesWeb = webDist !== undefined && existsSync(webDist);
 
+  // Error and not-found handlers are registered before any plugin. Registering
+  // @fastify/static (a fastify-plugin) after them keeps the root context's
+  // custom error handling intact; doing it the other way around made Fastify
+  // fall back to its default error envelopes.
   app.setErrorHandler((error, request, reply) => {
     if (isSessionBoxError(error)) {
       reply.status(error.statusCode).send(error.toResponse(request.id));
@@ -86,6 +87,10 @@ export async function buildApp(deps: AppDependencies): Promise<SessionBoxApp> {
       .status(404)
       .send(new SessionBoxError("NOT_FOUND", "route not found").toResponse(request.id));
   });
+
+  if (servesWeb && webDist !== undefined) {
+    await app.register(fastifyStatic, { root: resolve(webDist) });
+  }
 
   return app;
 }

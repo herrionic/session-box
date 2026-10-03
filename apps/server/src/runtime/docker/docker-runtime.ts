@@ -15,11 +15,14 @@ const DEFAULT_PIDS_LIMIT = 512;
 /**
  * sshd runs as root inside the sandbox and drops to the non-root "agent" user
  * for each session. These are the only capabilities it needs; everything else
- * is dropped (PROJECT.md §21).
+ * is dropped (PROJECT.md §21). FOWNER is required to chmod the injected
+ * authorized_keys after chowning it to the agent user (and for sshd's own
+ * ptty/session file handling).
  */
 const SANDBOX_CAPABILITIES = [
   "CHOWN",
   "DAC_OVERRIDE",
+  "FOWNER",
   "KILL",
   "NET_BIND_SERVICE",
   "SETGID",

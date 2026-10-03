@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ServerConfig } from "../src/config.ts";
 import { InMemoryCredentialStore } from "../src/credentials/store.ts";
@@ -175,5 +178,60 @@ describe("HTTP API", () => {
 
     expect(response.statusCode).toBe(404);
     expect(response.json().error.code).toBe("NOT_FOUND");
+  });
+});
+
+describe("HTTP API with static web assets", () => {
+  let app: SessionBoxApp;
+  let webDir: string;
+
+  beforeEach(async () => {
+    webDir = mkdtempSync(join(tmpdir(), "sessionbox-web-"));
+    writeFileSync(join(webDir, "index.html"), "<!doctype html><title>SessionBox</title>");
+
+    const runtime = new FakeRuntime();
+    const service = new SandboxService({
+      runtime,
+      repository: new InMemorySandboxRepository(),
+      credentials: new InMemoryCredentialStore(Buffer.alloc(32, 1)),
+      ssh: new FakeSshSessionFactory(),
+      logger: createTestLogger(),
+      baseImage: testConfig.docker.baseImage,
+      workspace: testConfig.docker.workspace,
+      sshReadyTimeoutMs: 50,
+      sshRetryIntervalMs: 1,
+      sleep: async () => {},
+    });
+
+    app = await buildApp({
+      config: { ...testConfig, webDist: webDir },
+      logger: createTestLogger(),
+      runtime,
+      service,
+    });
+  });
+
+  afterEach(async () => {
+    await app.close();
+    rmSync(webDir, { recursive: true, force: true });
+  });
+
+  it("serves the SPA and keeps the custom error envelope", async () => {
+    const spa = await app.inject({ method: "GET", url: "/some/client/route" });
+    expect(spa.statusCode).toBe(200);
+    expect(spa.body).toContain("SessionBox");
+
+    const missing = await app.inject({ method: "GET", url: "/api/sandboxes/sbx_missing" });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.code).toBe("SANDBOX_NOT_FOUND");
+
+    const malformed = await app.inject({
+      method: "POST",
+      url: "/api/sandboxes",
+      headers: { "content-type": "application/json" },
+      payload: "{ not json",
+    });
+    expect(malformed.statusCode).toBe(400);
+    expect(malformed.json().error.code).toBe("INVALID_REQUEST");
   });
 });
