@@ -16,6 +16,9 @@ data/
 .env.local
 .env.*.local
 
+# SSH keys for the remote Docker host — never commit these
+.ssh/
+
 # logs
 *.log
 logs/
