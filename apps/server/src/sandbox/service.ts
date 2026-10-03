@@ -284,6 +284,22 @@ export class SandboxService {
     return this.sessions.withSession({ sandboxId: id, runtimeRef: ref }, operation);
   }
 
+  /**
+   * Returns the cached SSH session for a running sandbox. The web terminal
+   * holds its own shell channel on this session.
+   */
+  async openSshSession(id: string): Promise<SshSession> {
+    const record = await this.require(id);
+    if (record.status !== "running") {
+      throw new SessionBoxError(
+        "SANDBOX_NOT_RUNNING",
+        `sandbox is ${record.status}; start it first`,
+      );
+    }
+    const ref = this.requireRef(record);
+    return this.sessions.get({ sandboxId: id, runtimeRef: ref });
+  }
+
   /** Releases every cached SSH session (used on server shutdown). */
   async close(): Promise<void> {
     await this.sessions.releaseAll();

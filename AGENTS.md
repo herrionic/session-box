@@ -54,8 +54,11 @@ Read → Plan → Implement → Test → Explain.
 - Local development (Windows, **no Docker installed**):
   `corepack pnpm install`, `corepack pnpm typecheck`, `corepack pnpm test`.
 - Docker-dependent work (building images, sandbox lifecycle, SSH/SFTP,
-  terminal integration) runs on the remote Linux host once provisioned:
+  terminal integration) runs on the remote Linux host:
   sync with `scripts/sync.ps1`, operate with `scripts/remote.ps1`.
+  The dev topology runs `tsx watch` + Vite; note that `tsx watch` does not
+  always pick up files replaced by the tar sync — if a change seems ignored,
+  run `scripts/remote.ps1 restart server` (docker compose restart).
   Never claim Docker behaviour is verified until it has been exercised
   there; mark such work as "pending remote verification" otherwise.
 - Never commit `node_modules/`, `dist/`, `.env`, `data/` or generated state.

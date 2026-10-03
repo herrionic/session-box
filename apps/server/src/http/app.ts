@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import fastifyStatic from "@fastify/static";
+import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { ZodError } from "zod";
 import { newRequestId } from "@sessionbox/shared";
@@ -13,6 +14,7 @@ import type { SandboxService } from "../sandbox/service.ts";
 import { registerFileRoutes } from "./routes/files.ts";
 import { registerHealthRoutes } from "./routes/health.ts";
 import { registerSandboxRoutes } from "./routes/sandboxes.ts";
+import { registerTerminalRoutes } from "./routes/terminal.ts";
 import type { SessionBoxApp } from "./types.ts";
 
 export interface AppDependencies {
@@ -29,26 +31,12 @@ export async function buildApp(deps: AppDependencies): Promise<SessionBoxApp> {
     genReqId: () => newRequestId(),
   });
 
-  registerHealthRoutes(app, { config: deps.config, runtime: deps.runtime });
-  registerSandboxRoutes(app, { service: deps.service });
-  registerFileRoutes(app, { files: deps.files });
-
-  // Uploads arrive as raw bytes; everything else stays JSON.
-  app.addContentTypeParser(
-    "application/octet-stream",
-    { parseAs: "buffer" },
-    (_request, body, done) => {
-      done(null, body);
-    },
-  );
-
   const webDist = deps.config.webDist;
   const servesWeb = webDist !== undefined && existsSync(webDist);
 
   // Error and not-found handlers are registered before any plugin. Registering
-  // @fastify/static (a fastify-plugin) after them keeps the root context's
-  // custom error handling intact; doing it the other way around made Fastify
-  // fall back to its default error envelopes.
+  // a plugin (static, websocket) first makes Fastify fall back to its default
+  // error envelopes for routes registered on the root context.
   app.setErrorHandler((error, request, reply) => {
     if (isSessionBoxError(error)) {
       reply.status(error.statusCode).send(error.toResponse(request.id));
@@ -100,6 +88,23 @@ export async function buildApp(deps: AppDependencies): Promise<SessionBoxApp> {
       .status(404)
       .send(new SessionBoxError("NOT_FOUND", "route not found").toResponse(request.id));
   });
+
+  // WebSocket support must be registered before the websocket routes.
+  await app.register(websocket);
+
+  registerHealthRoutes(app, { config: deps.config, runtime: deps.runtime });
+  registerSandboxRoutes(app, { service: deps.service });
+  registerFileRoutes(app, { files: deps.files });
+  registerTerminalRoutes(app, { service: deps.service });
+
+  // Uploads arrive as raw bytes; everything else stays JSON.
+  app.addContentTypeParser(
+    "application/octet-stream",
+    { parseAs: "buffer" },
+    (_request, body, done) => {
+      done(null, body);
+    },
+  );
 
   if (servesWeb && webDist !== undefined) {
     await app.register(fastifyStatic, { root: resolve(webDist) });

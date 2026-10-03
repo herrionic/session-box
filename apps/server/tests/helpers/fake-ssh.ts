@@ -8,6 +8,8 @@ import {
   type SshSession,
   type SshSessionFactory,
   type SshSessionRequest,
+  type SshShell,
+  type SshShellOptions,
 } from "../../src/ssh/session.ts";
 
 interface FakeNode {
@@ -15,6 +17,15 @@ interface FakeNode {
   content: Buffer;
   mode: number;
   modifiedAt: number;
+}
+
+export interface FakeShell {
+  cols: number;
+  rows: number;
+  writes: string[];
+  closed: boolean;
+  emit(data: string): void;
+  exit(code: number | null): void;
 }
 
 /** Scriptable SSH session factory for service/file/probe tests (no sshd). */
@@ -44,6 +55,7 @@ export class FakeSshSessionFactory implements SshSessionFactory {
 export class FakeSshSession implements SshSession {
   readonly commands: string[] = [];
   readonly nodes = new Map<string, FakeNode>();
+  readonly shells: FakeShell[] = [];
   execResults: SshExecResult[] = [];
   closed = false;
 
@@ -148,6 +160,31 @@ export class FakeSshSession implements SshSession {
     }
 
     this.nodes.delete(target);
+  }
+
+  async openShell(options: SshShellOptions): Promise<SshShell> {
+    const shell: FakeShell = {
+      cols: options.cols,
+      rows: options.rows,
+      writes: [],
+      closed: false,
+      emit: (data: string) => options.onData(data),
+      exit: (code: number | null) => options.onExit(code),
+    };
+    this.shells.push(shell);
+
+    return {
+      write: (data: string) => {
+        shell.writes.push(data);
+      },
+      resize: (cols: number, rows: number) => {
+        shell.cols = cols;
+        shell.rows = rows;
+      },
+      close: () => {
+        shell.closed = true;
+      },
+    };
   }
 
   async close(): Promise<void> {

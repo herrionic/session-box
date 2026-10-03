@@ -16,6 +16,8 @@ import {
   type SshSession,
   type SshSessionFactory,
   type SshSessionRequest,
+  type SshShell,
+  type SshShellOptions,
 } from "./session.ts";
 
 export interface Ssh2SessionFactoryOptions {
@@ -31,6 +33,7 @@ const DEFAULT_SSH_PORT = 22;
 const DEFAULT_SSH_USERNAME = "agent";
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_EXEC_TIMEOUT_MS = 30_000;
+const DEFAULT_TERM = "xterm-256color";
 
 /**
  * SSH/SFTP implementation over ssh2. The TCP transport always comes from
@@ -257,6 +260,41 @@ class Ssh2Session implements SshSession {
   async close(): Promise<void> {
     this.sftpPromise = undefined;
     this.client.end();
+  }
+
+  async openShell(options: SshShellOptions): Promise<SshShell> {
+    return await new Promise<SshShell>((resolve, reject) => {
+      this.client.shell(
+        {
+          term: options.term ?? DEFAULT_TERM,
+          cols: options.cols,
+          rows: options.rows,
+        },
+        (error, stream) => {
+          if (error) {
+            reject(new SshError("failed to open a shell in the sandbox", { cause: error }));
+            return;
+          }
+
+          stream.on("data", (chunk: Buffer) => options.onData(chunk.toString("utf8")));
+          stream.stderr.on("data", (chunk: Buffer) => options.onData(chunk.toString("utf8")));
+          stream.on("close", (code: number | null) => options.onExit(code ?? null));
+          stream.on("error", (streamError: Error) => options.onError?.(streamError));
+
+          resolve({
+            write: (data: string) => {
+              stream.write(data);
+            },
+            resize: (cols: number, rows: number) => {
+              stream.setWindow(rows, cols, 0, 0);
+            },
+            close: () => {
+              stream.close();
+            },
+          });
+        },
+      );
+    });
   }
 
   private sftp(): Promise<SFTPWrapper> {

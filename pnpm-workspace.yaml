@@ -8,6 +8,7 @@ minimumReleaseAgeExclude:
   - '@vitest/mocker@5.0.3'
   - '@vitest/spy@5.0.3'
   - vitest@5.0.3
+  - '@fastify/websocket@11.3.2'
 
 onlyBuiltDependencies:
   - esbuild

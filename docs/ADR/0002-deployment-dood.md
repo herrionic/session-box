@@ -25,9 +25,9 @@ the host by default").
 4. All sandboxes join that network. The server reaches `containerIP:22`
    directly; nothing is published on the host.
 5. Sandboxes run with all capabilities dropped except the minimum sshd needs
-   (`CHOWN, DAC_OVERRIDE, FOWNER, KILL, NET_BIND_SERVICE, SETGID, SETUID,
-   SYS_CHROOT`), `no-new-privileges`, PID/memory/CPU limits, no privileged
-   mode and no host mounts.
+   (`AUDIT_WRITE, CHOWN, DAC_OVERRIDE, FOWNER, KILL, NET_BIND_SERVICE, SETGID,
+   SETUID, SYS_CHROOT`), `no-new-privileges`, PID/memory/CPU limits, no
+   privileged mode and no host mounts.
 6. The server container runs as root: the mounted socket already grants
    host-root-equivalent power, and the socket is commonly `root:docker 660`,
    which a non-root container user cannot open. Running the server as root

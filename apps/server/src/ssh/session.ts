@@ -21,6 +21,22 @@ export interface SshFileEntry {
   modifiedAt: number;
 }
 
+export interface SshShellOptions {
+  cols: number;
+  rows: number;
+  term?: string;
+  onData: (data: string) => void;
+  onExit: (code: number | null) => void;
+  onError?: (error: Error) => void;
+}
+
+/** An interactive PTY-backed shell channel (used by the web terminal). */
+export interface SshShell {
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  close(): void;
+}
+
 /**
  * SessionBox-side SSH/SFTP session. The transport is always a runtime-provided
  * duplex stream (`SandboxRuntime.openPortStream`); callers never see host or
@@ -34,6 +50,7 @@ export interface SshSession {
   stat(path: string): Promise<SshFileEntry>;
   mkdir(path: string, options?: { recursive?: boolean }): Promise<void>;
   remove(path: string, options?: { recursive?: boolean }): Promise<void>;
+  openShell(options: SshShellOptions): Promise<SshShell>;
   close(): Promise<void>;
 }
 
