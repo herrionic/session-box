@@ -29,7 +29,9 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
     "@sessionbox/client": "workspace:*",
+    "@sessionbox/dsh-plugin": "workspace:*",
     "@sessionbox/pi-plugin": "workspace:*",
     "@types/dockerode": "^4.0.1",
     "@types/node": "^24.19.0",
