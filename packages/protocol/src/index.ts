@@ -1,3 +1,4 @@
+export * from "./agent.ts";
 export * from "./errors.ts";
 export * from "./files.ts";
 export * from "./lifecycle.ts";

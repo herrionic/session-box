@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { AgentGateway } from "../src/agent/gateway.ts";
 import type { ServerConfig } from "../src/config.ts";
 import { InMemoryCredentialStore } from "../src/credentials/store.ts";
 import { SandboxFilesService } from "../src/files/service.ts";
@@ -61,6 +62,7 @@ describe("HTTP API", () => {
       runtime,
       service,
       files,
+      gateway: new AgentGateway(service, logger),
     });
   });
 
@@ -228,6 +230,7 @@ describe("HTTP API with static web assets", () => {
         workspace: testConfig.docker.workspace,
         logger,
       }),
+      gateway: new AgentGateway(service, logger),
     });
   });
 

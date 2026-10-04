@@ -5,12 +5,14 @@ import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { ZodError } from "zod";
 import { newRequestId } from "@sessionbox/shared";
+import type { AgentGateway } from "../agent/gateway.ts";
 import type { ServerConfig } from "../config.ts";
 import { SessionBoxError, isSessionBoxError } from "../errors.ts";
 import type { SandboxFilesService } from "../files/service.ts";
 import type { Logger } from "../logging.ts";
 import type { SandboxRuntime } from "../runtime/types.ts";
 import type { SandboxService } from "../sandbox/service.ts";
+import { registerAgentRoutes } from "./routes/agent.ts";
 import { registerFileRoutes } from "./routes/files.ts";
 import { registerHealthRoutes } from "./routes/health.ts";
 import { registerSandboxRoutes } from "./routes/sandboxes.ts";
@@ -23,6 +25,7 @@ export interface AppDependencies {
   runtime: SandboxRuntime;
   service: SandboxService;
   files: SandboxFilesService;
+  gateway: AgentGateway;
 }
 
 export async function buildApp(deps: AppDependencies): Promise<SessionBoxApp> {
@@ -96,6 +99,26 @@ export async function buildApp(deps: AppDependencies): Promise<SessionBoxApp> {
   registerSandboxRoutes(app, { service: deps.service });
   registerFileRoutes(app, { files: deps.files });
   registerTerminalRoutes(app, { service: deps.service });
+  registerAgentRoutes(app, { gateway: deps.gateway });
+
+  // JSON bodies may legitimately be absent on body-less POSTs (start/stop);
+  // treat an empty body as undefined instead of failing the parse.
+  app.addContentTypeParser("application/json", { parseAs: "string" }, (_request, body, done) => {
+    const text = (typeof body === "string" ? body : body.toString("utf8")).trim();
+    if (text === "") {
+      done(null, undefined);
+      return;
+    }
+    try {
+      done(null, JSON.parse(text));
+    } catch {
+      done(
+        new SessionBoxError("INVALID_REQUEST", "invalid request", {
+          details: { reason: "body is not valid JSON" },
+        }),
+      );
+    }
+  });
 
   // Uploads arrive as raw bytes; everything else stays JSON.
   app.addContentTypeParser(

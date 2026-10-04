@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
+import { AgentGateway } from "../src/agent/gateway.ts";
 import type { ServerConfig } from "../src/config.ts";
 import { InMemoryCredentialStore } from "../src/credentials/store.ts";
 import { SandboxFilesService } from "../src/files/service.ts";
@@ -54,7 +55,14 @@ async function createFixture(): Promise<{
     logger,
   });
 
-  const app = await buildApp({ config: testConfig, logger, runtime, service, files });
+  const app = await buildApp({
+    config: testConfig,
+    logger,
+    runtime,
+    service,
+    files,
+    gateway: new AgentGateway(service, logger),
+  });
   await app.listen({ host: "127.0.0.1", port: 0 });
 
   const address = app.server.address();

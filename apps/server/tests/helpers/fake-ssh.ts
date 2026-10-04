@@ -31,11 +31,23 @@ export interface FakeShell {
 /** Scriptable SSH session factory for service/file/probe tests (no sshd). */
 export class FakeSshSessionFactory implements SshSessionFactory {
   readonly requests: SshSessionRequest[] = [];
+  /** Shared session used when `perSandbox` is false. */
   readonly session = new FakeSshSession();
+  private readonly sessionsBySandbox = new Map<string, FakeSshSession>();
+  private readonly perSandbox: boolean;
 
   /** Fail this many attempts before reporting ready (readiness probe tests). */
   failuresBeforeSuccess = 0;
   alwaysFail = false;
+
+  constructor(options: { perSandbox?: boolean } = {}) {
+    this.perSandbox = options.perSandbox === true;
+  }
+
+  /** The fake filesystem for one sandbox (isolation tests). */
+  sessionFor(sandboxId: string): FakeSshSession {
+    return this.sessionsBySandbox.get(sandboxId) ?? this.session;
+  }
 
   async create(request: SshSessionRequest): Promise<SshSession> {
     this.requests.push(request);
@@ -47,7 +59,15 @@ export class FakeSshSessionFactory implements SshSessionFactory {
       this.failuresBeforeSuccess -= 1;
       throw new SshUnavailableError("fake SSH is not ready yet");
     }
-    return this.session;
+
+    if (!this.perSandbox) return this.session;
+
+    let session = this.sessionsBySandbox.get(request.sandboxId);
+    if (session === undefined) {
+      session = new FakeSshSession();
+      this.sessionsBySandbox.set(request.sandboxId, session);
+    }
+    return session;
   }
 }
 

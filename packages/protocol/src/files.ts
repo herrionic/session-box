@@ -22,6 +22,14 @@ export const FileListResponseSchema = z.strictObject({
 
 export type FileListResponse = z.infer<typeof FileListResponseSchema>;
 
+export const FileMetadataSchema = z.strictObject({
+  path: z.string().min(1),
+  size: z.number().int().nonnegative(),
+  modifiedAt: z.number().int().nonnegative(),
+});
+
+export type FileMetadata = z.infer<typeof FileMetadataSchema>;
+
 export const FileContentSchema = z.strictObject({
   path: z.string().min(1),
   content: z.string(),

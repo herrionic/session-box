@@ -26,3 +26,7 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# vendored reference sources (agent harnesses) ¡ª never commit
+.vendor/
+*.zip

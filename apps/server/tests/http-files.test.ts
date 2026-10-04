@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { AgentGateway } from "../src/agent/gateway.ts";
 import type { ServerConfig } from "../src/config.ts";
 import { InMemoryCredentialStore } from "../src/credentials/store.ts";
 import { SandboxFilesService } from "../src/files/service.ts";
@@ -52,7 +53,14 @@ describe("file manager HTTP API", () => {
       logger,
     });
 
-    app = await buildApp({ config: testConfig, logger, runtime, service, files });
+    app = await buildApp({
+      config: testConfig,
+      logger,
+      runtime,
+      service,
+      files,
+      gateway: new AgentGateway(service, logger),
+    });
 
     const created = await app.inject({ method: "POST", url: "/api/sandboxes", payload: {} });
     sandboxId = (created.json() as { id: string }).id;

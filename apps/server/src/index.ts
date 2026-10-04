@@ -3,6 +3,7 @@
  * this module exists so the package has a stable public export later).
  */
 export { loadConfig, type ServerConfig } from "./config.ts";
+export { AgentGateway } from "./agent/gateway.ts";
 export { parseMasterKey } from "./credentials/master-key.ts";
 export { InMemoryCredentialStore, type CredentialStore } from "./credentials/store.ts";
 export { buildApp, type AppDependencies } from "./http/app.ts";

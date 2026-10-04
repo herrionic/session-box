@@ -28,6 +28,15 @@ the host by default").
    (`AUDIT_WRITE, CHOWN, DAC_OVERRIDE, FOWNER, KILL, NET_BIND_SERVICE, SETGID,
    SETUID, SYS_CHROOT`), `no-new-privileges`, PID/memory/CPU limits, no
    privileged mode and no host mounts.
+
+   `AUDIT_WRITE` deserves a note: on the PTY login path OpenSSH calls
+   `do_login()` → `audit_session_open()`, which writes an audit record and
+   calls `fatal()` if it cannot (audit-linux.c). Without the capability the
+   session is torn down right after authentication, so the web terminal fails
+   while SFTP/exec sessions (which do not take that code path) still work.
+   Docker's default capability set includes `AUDIT_WRITE`; dropping ALL
+   capabilities removed it. The trade-off is that sandbox logins may write
+   audit records on the host — accepted for the MVP.
 6. The server container runs as root: the mounted socket already grants
    host-root-equivalent power, and the socket is commonly `root:docker 660`,
    which a non-root container user cannot open. Running the server as root

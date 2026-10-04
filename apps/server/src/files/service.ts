@@ -9,12 +9,8 @@ import {
 import { SessionBoxError } from "../errors.ts";
 import type { Logger } from "../logging.ts";
 import { normalizeSandboxPath, resolveWithinWorkspace } from "../ssh/paths.ts";
-import {
-  SshNotFoundError,
-  SshTimeoutError,
-  SshUnavailableError,
-  type SshSession,
-} from "../ssh/session.ts";
+import { toPublicSshError } from "../ssh/public-errors.ts";
+import type { SshSession } from "../ssh/session.ts";
 import type { SandboxService } from "../sandbox/service.ts";
 
 export interface SandboxFilesServiceOptions {
@@ -166,41 +162,8 @@ export class SandboxFilesService {
     try {
       return await this.sandboxes.withSshSession(sandboxId, operation);
     } catch (error) {
-      throw this.toPublicError(error);
+      throw toPublicSshError(error, this.logger, "file.operation.failed");
     }
-  }
-
-  private toPublicError(error: unknown): SessionBoxError {
-    if (error instanceof SessionBoxError) return error;
-
-    if (error instanceof SshNotFoundError) {
-      return new SessionBoxError("NOT_FOUND", "the path was not found in the sandbox", {
-        cause: error,
-      });
-    }
-    if (error instanceof SshTimeoutError) {
-      return new SessionBoxError("OPERATION_TIMEOUT", "the file operation timed out", {
-        cause: error,
-      });
-    }
-    if (error instanceof SshUnavailableError) {
-      return new SessionBoxError(
-        "SSH_UNAVAILABLE",
-        "the sandbox SSH connection is unavailable",
-        { cause: error },
-      );
-    }
-
-    this.logger.error(
-      {
-        event: "file.operation.failed",
-        err: error instanceof Error ? error.message : String(error),
-      },
-      "file operation failed",
-    );
-    return new SessionBoxError("RUNTIME_ERROR", "the file operation failed; see server logs", {
-      cause: error,
-    });
   }
 }
 

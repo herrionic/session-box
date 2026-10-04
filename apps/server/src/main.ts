@@ -1,6 +1,7 @@
 import { loadConfig } from "./config.ts";
 import { parseMasterKey } from "./credentials/master-key.ts";
 import { InMemoryCredentialStore } from "./credentials/store.ts";
+import { AgentGateway } from "./agent/gateway.ts";
 import { SandboxFilesService } from "./files/service.ts";
 import { buildApp } from "./http/app.ts";
 import { createLogger } from "./logging.ts";
@@ -42,8 +43,9 @@ async function main(): Promise<void> {
     workspace: config.docker.workspace,
     logger,
   });
+  const gateway = new AgentGateway(service, logger);
 
-  const app = await buildApp({ config, logger, runtime, service, files });
+  const app = await buildApp({ config, logger, runtime, service, files, gateway });
 
   try {
     await service.reconcile();

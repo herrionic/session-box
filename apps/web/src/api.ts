@@ -25,10 +25,14 @@ async function parseError(response: Response): Promise<ApiError> {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
-  });
+  const headers: Record<string, string> = {
+    ...(init?.headers as Record<string, string> | undefined),
+  };
+  if (init?.body !== undefined) {
+    headers["content-type"] = "application/json";
+  }
+
+  const response = await fetch(path, { ...init, headers });
 
   if (response.status === 204) {
     return undefined as T;
