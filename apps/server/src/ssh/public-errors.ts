@@ -3,6 +3,7 @@ import type { Logger } from "../logging.ts";
 import {
   SshCancelledError,
   SshNotFoundError,
+  SshPermissionError,
   SshTimeoutError,
   SshUnavailableError,
 } from "./session.ts";
@@ -16,6 +17,11 @@ export function toPublicSshError(error: unknown, logger: Logger, event: string):
 
   if (error instanceof SshNotFoundError) {
     return new SessionBoxError("NOT_FOUND", "the path was not found in the container", {
+      cause: error,
+    });
+  }
+  if (error instanceof SshPermissionError) {
+    return new SessionBoxError("FS_PERMISSION_DENIED", "permission denied in the container", {
       cause: error,
     });
   }
@@ -35,11 +41,10 @@ export function toPublicSshError(error: unknown, logger: Logger, event: string):
     );
   }
 
-  logger.error(
-    { event, err: error instanceof Error ? error.message : String(error) },
-    "SSH operation failed",
-  );
+  const reason = error instanceof Error ? error.message : String(error);
+  logger.error({ event, err: reason }, "SSH operation failed");
   return new SessionBoxError("RUNTIME_ERROR", "the operation failed; see server logs", {
     cause: error,
+    details: { reason },
   });
 }

@@ -10,6 +10,7 @@ import {
   SshCancelledError,
   SshError,
   SshNotFoundError,
+  SshPermissionError,
   SshTimeoutError,
   SshUnavailableError,
   type SshExecOptions,
@@ -137,6 +138,8 @@ class Ssh2Session implements SshSession {
       timeoutMs,
       timeoutDropsSession: false,
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
+      ...(options.onStdout !== undefined ? { onStdout: options.onStdout } : {}),
+      ...(options.onStderr !== undefined ? { onStderr: options.onStderr } : {}),
       onAbort: (channel) => this.killProcessGroup(pidFile, channel),
     });
   }
@@ -154,6 +157,8 @@ class Ssh2Session implements SshSession {
       signal?: AbortSignal;
       /** Exec timeouts leave the connection usable; SFTP timeouts drop it. */
       timeoutDropsSession?: boolean;
+      onStdout?: (data: string) => void;
+      onStderr?: (data: string) => void;
       onAbort?: (channel: ClientChannel | undefined) => Promise<void>;
     },
   ): Promise<SshExecResult> {
@@ -221,8 +226,14 @@ class Ssh2Session implements SshSession {
         const stdout: Buffer[] = [];
         const stderr: Buffer[] = [];
 
-        stream.on("data", (chunk: Buffer) => stdout.push(chunk));
-        stream.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+        stream.on("data", (chunk: Buffer) => {
+          stdout.push(chunk);
+          options.onStdout?.(chunk.toString("utf8"));
+        });
+        stream.stderr.on("data", (chunk: Buffer) => {
+          stderr.push(chunk);
+          options.onStderr?.(chunk.toString("utf8"));
+        });
 
         stream.once("close", (code: number | null) => {
           if (aborting) return;
@@ -303,6 +314,114 @@ class Ssh2Session implements SshSession {
     await this.sftpCall<void>("write file", path, (done) => sftp.writeFile(path, content, done));
   }
 
+  async readFileRange(path: string, offset: number, length: number): Promise<Buffer> {
+    const sftp = await this.sftp();
+    const handle = await this.sftpCall<Buffer>("open file", path, (done) =>
+      sftp.open(path, "r", done),
+    );
+
+    try {
+      const chunks: Buffer[] = [];
+      let position = offset;
+      let remaining = length;
+
+      while (remaining > 0) {
+        const size = Math.min(remaining, 256 * 1024);
+        const chunk = await this.sftpCall<Buffer>("read file", path, (done) =>
+          sftp.read(handle, Buffer.alloc(size), 0, size, position, (error, bytesRead, buffer) => {
+            if (error) done(error);
+            else done(undefined, buffer.subarray(0, bytesRead));
+          }),
+        );
+        if (chunk.length === 0) break;
+        chunks.push(chunk);
+        position += chunk.length;
+        remaining -= chunk.length;
+      }
+
+      return Buffer.concat(chunks);
+    } finally {
+      await this.sftpCall<void>("close file", path, (done) => sftp.close(handle, done)).catch(
+        () => undefined,
+      );
+    }
+  }
+
+  async writeFileAtomic(path: string, content: Buffer | string): Promise<void> {
+    const sftp = await this.sftp();
+    // Preserve "write through a symlink" semantics when the target exists.
+    const target = await this.resolvePath(path);
+    const temp = posix.join(
+      posix.dirname(target),
+      `.sessionbox-tmp-${randomBytes(8).toString("hex")}`,
+    );
+
+    await this.sftpCall<void>("write file", temp, (done) => sftp.writeFile(temp, content, done));
+    try {
+      await this.replaceFile(sftp, temp, target);
+    } catch (error) {
+      await this.sftpCall<void>("remove file", temp, (done) => sftp.unlink(temp, done)).catch(
+        () => undefined,
+      );
+      throw error;
+    }
+  }
+
+  async rename(from: string, to: string): Promise<void> {
+    const sftp = await this.sftp();
+    await this.replaceFile(sftp, from, to);
+  }
+
+  /**
+   * Atomically replaces `target` with `source`. Plain SFTP rename fails when
+   * the destination exists (OpenSSH behavior), so the `posix-rename@openssh.com`
+   * extension is preferred; servers without it get an unlink-then-rename
+   * fallback.
+   */
+  private async replaceFile(sftp: SFTPWrapper, source: string, target: string): Promise<void> {
+    try {
+      await this.sftpCall<void>("replace file", target, (done) => {
+        sftp.ext_openssh_rename(source, target, done);
+      });
+      return;
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !error.message.includes("does not support this extended request")
+      ) {
+        throw error;
+      }
+    }
+
+    await this.sftpCall<void>("remove file", target, (done) =>
+      sftp.unlink(target, (error) => {
+        const code = (error as { code?: unknown } | null)?.code;
+        done(code === 2 ? undefined : error);
+      }),
+    ).catch(() => undefined);
+    await this.sftpCall<void>("replace file", target, (done) => sftp.rename(source, target, done));
+  }
+
+  async chmod(path: string, mode: number): Promise<void> {
+    const sftp = await this.sftp();
+    await this.sftpCall<void>("change mode", path, (done) => sftp.chmod(path, mode, done));
+  }
+
+  async symlink(path: string, target: string): Promise<void> {
+    const sftp = await this.sftp();
+    await this.sftpCall<void>("create symlink", path, (done) => sftp.symlink(target, path, done));
+  }
+
+  /** Resolves symlinks so a write lands on the real file; falls back to the input. */
+  private async resolvePath(path: string): Promise<string> {
+    const sftp = await this.sftp();
+    try {
+      return await this.sftpCall<string>("resolve path", path, (done) => sftp.realpath(path, done));
+    } catch {
+      return path;
+    }
+  }
+
   async list(path: string): Promise<SshFileEntry[]> {
     const sftp = await this.sftp();
     const entries = await this.sftpCall<Array<{ filename: string; attrs: Stats }>>(
@@ -317,10 +436,21 @@ class Ssh2Session implements SshSession {
     });
   }
 
-  async stat(path: string): Promise<SshFileEntry> {
+  async stat(path: string, options: { follow?: boolean } = {}): Promise<SshFileEntry> {
     const sftp = await this.sftp();
-    const stats = await this.sftpCall<Stats>("stat path", path, (done) => sftp.stat(path, done));
-    return toFileEntry(path, posix.basename(path), stats);
+    const follow = options.follow !== false;
+    const stats = await this.sftpCall<Stats>("stat path", path, (done) =>
+      follow ? sftp.stat(path, done) : sftp.lstat(path, done),
+    );
+
+    let linkTarget: string | undefined;
+    if (!follow && stats.isSymbolicLink()) {
+      linkTarget = await this.sftpCall<string>("read link", path, (done) =>
+        sftp.readlink(path, done),
+      );
+    }
+
+    return toFileEntry(path, posix.basename(path), stats, linkTarget);
   }
 
   async mkdir(path: string, options: { recursive?: boolean } = {}): Promise<void> {
@@ -486,26 +616,35 @@ class Ssh2Session implements SshSession {
   }
 }
 
-function toFileEntry(path: string, name: string, stats: Stats): SshFileEntry {
+function toFileEntry(
+  path: string,
+  name: string,
+  stats: Stats,
+  linkTarget?: string,
+): SshFileEntry {
   let type: SshFileType = "other";
   if (stats.isDirectory()) type = "directory";
   else if (stats.isFile()) type = "file";
   else if (stats.isSymbolicLink()) type = "symlink";
 
+  const modifiedAt = stats.mtime * 1000;
   return {
     name,
     path,
     type,
     size: stats.size,
     mode: stats.mode,
-    modifiedAt: stats.mtime * 1000,
+    modifiedAt,
+    version: `${modifiedAt}:${stats.size}`,
+    ...(linkTarget !== undefined ? { linkTarget } : {}),
   };
 }
 
 function sftpError(action: string, path: string, error: unknown): SshError {
   const code = (error as { code?: unknown } | null)?.code;
-  // SFTP status code 2 = no such file.
+  // SFTP status codes: 2 = no such file, 3 = permission denied.
   if (code === 2) return new SshNotFoundError(`${path} was not found`, { cause: error });
+  if (code === 3) return new SshPermissionError(`permission denied: ${path}`, { cause: error });
   return new SshError(`failed to ${action}: ${path}`, { cause: error });
 }
 

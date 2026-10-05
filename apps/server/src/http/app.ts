@@ -125,7 +125,11 @@ export async function buildApp(deps: AppDependencies): Promise<SessionBoxApp> {
   registerContainerRoutes(app, { service: deps.service });
   registerFileRoutes(app, { files: deps.files });
   registerTerminalRoutes(app, { service: deps.service });
-  registerAgentRoutes(app, { gateway: deps.gateway, service: deps.service });
+  registerAgentRoutes(app, {
+    gateway: deps.gateway,
+    service: deps.service,
+    ...(deps.config.limits !== undefined ? { limits: deps.config.limits } : {}),
+  });
 
   // JSON bodies may legitimately be absent on body-less POSTs (start/stop);
   // treat an empty body as undefined instead of failing the parse.

@@ -11,6 +11,14 @@ export const FileEntrySchema = z.strictObject({
   mode: z.number().int().nonnegative(),
   /** Epoch milliseconds. */
   modifiedAt: z.number().int().nonnegative(),
+  /**
+   * Opaque version for optimistic concurrency: `<mtimeMs>:<size>`. SFTP
+   * reports seconds, so a same-second rewrite with an unchanged size may not
+   * change the version (documented limitation).
+   */
+  version: z.string().min(1),
+  /** Symlink target; present only when the entry was observed without following. */
+  linkTarget: z.string().optional(),
 });
 
 export type FileEntry = z.infer<typeof FileEntrySchema>;
@@ -26,6 +34,7 @@ export const FileMetadataSchema = z.strictObject({
   path: z.string().min(1),
   size: z.number().int().nonnegative(),
   modifiedAt: z.number().int().nonnegative(),
+  version: z.string().min(1),
 });
 
 export type FileMetadata = z.infer<typeof FileMetadataSchema>;
@@ -35,6 +44,13 @@ export const FileContentSchema = z.strictObject({
   content: z.string(),
   size: z.number().int().nonnegative(),
   modifiedAt: z.number().int().nonnegative(),
+  version: z.string().min(1),
+  /** 0-based byte offset of the returned range. */
+  offset: z.number().int().nonnegative(),
+  /** Byte length of the returned range. */
+  length: z.number().int().nonnegative(),
+  /** Whether the returned range reaches the end of the file. */
+  eof: z.boolean(),
 });
 
 export type FileContent = z.infer<typeof FileContentSchema>;
@@ -45,6 +61,7 @@ export const FileBytesSchema = z.strictObject({
   contentBase64: z.string(),
   size: z.number().int().nonnegative(),
   modifiedAt: z.number().int().nonnegative(),
+  version: z.string().min(1),
 });
 
 export type FileBytes = z.infer<typeof FileBytesSchema>;

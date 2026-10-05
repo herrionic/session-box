@@ -36,18 +36,64 @@ describe("agent requests", () => {
         targetRequestId: "r1",
       },
       { type: "file.read", requestId: "r2", containerId: "ctr_1", path: "/workspace/a.txt" },
-      { type: "file.readBytes", requestId: "r2b", containerId: "ctr_1", path: "/workspace/a.bin" },
+      {
+        type: "file.read",
+        requestId: "r2r",
+        containerId: "ctr_1",
+        path: "/workspace/a.txt",
+        offset: 10,
+        length: 20,
+      },
+      {
+        type: "file.readBytes",
+        requestId: "r2b",
+        containerId: "ctr_1",
+        path: "/workspace/a.bin",
+        maxBytes: 4096,
+      },
       {
         type: "file.write",
         requestId: "r3",
         containerId: "ctr_1",
         path: "/workspace/a.txt",
         content: "hi",
+        expected: { version: "1000:2" },
+      },
+      {
+        type: "file.rename",
+        requestId: "r3b",
+        containerId: "ctr_1",
+        from: "/workspace/a.txt",
+        to: "/workspace/b.txt",
+      },
+      {
+        type: "file.chmod",
+        requestId: "r3c",
+        containerId: "ctr_1",
+        path: "/workspace/a.txt",
+        mode: 0o644,
+      },
+      {
+        type: "file.symlink",
+        requestId: "r3d",
+        containerId: "ctr_1",
+        path: "/workspace/link",
+        target: "/workspace/a.txt",
       },
       { type: "file.list", requestId: "r4", containerId: "ctr_1", path: "/workspace" },
-      { type: "file.stat", requestId: "r5", containerId: "ctr_1", path: "/workspace/a.txt" },
+      {
+        type: "file.stat",
+        requestId: "r5",
+        containerId: "ctr_1",
+        path: "/workspace/a.txt",
+        follow: false,
+      },
       { type: "file.mkdir", requestId: "r6", containerId: "ctr_1", path: "/workspace/x" },
       { type: "file.remove", requestId: "r7", containerId: "ctr_1", path: "/workspace/x" },
+      { type: "terminal.open", requestId: "r8", containerId: "ctr_1", cols: 80, rows: 24 },
+      { type: "terminal.input", terminalId: "term_x", data: "ls\r" },
+      { type: "terminal.resize", terminalId: "term_x", cols: 100, rows: 30 },
+      { type: "terminal.close", terminalId: "term_x" },
     ];
 
     for (const request of requests) {
@@ -92,9 +138,64 @@ describe("agent responses", () => {
 
     expect(
       AgentResponseSchema.safeParse({
+        requestId: "r1",
+        type: "exec.stdout",
+        data: "partial",
+      }).success,
+    ).toBe(true);
+
+    expect(
+      AgentResponseSchema.safeParse({
+        requestId: "r2",
+        type: "file.read.result",
+        file: {
+          path: "/workspace/a.txt",
+          content: "hi",
+          size: 2,
+          modifiedAt: 1000,
+          version: "1000:2",
+          offset: 0,
+          length: 2,
+          eof: true,
+        },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      AgentResponseSchema.safeParse({
         requestId: "r2b",
         type: "file.readBytes.result",
-        file: { path: "/workspace/a.bin", contentBase64: "AAEC", size: 3, modifiedAt: 0 },
+        file: {
+          path: "/workspace/a.bin",
+          contentBase64: "AAEC",
+          size: 3,
+          modifiedAt: 1000,
+          version: "1000:3",
+        },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      AgentResponseSchema.safeParse({
+        requestId: "r8",
+        type: "terminal.opened",
+        terminalId: "term_x",
+      }).success,
+    ).toBe(true);
+
+    expect(
+      AgentResponseSchema.safeParse({
+        type: "terminal.output",
+        terminalId: "term_x",
+        data: "hi\r\n",
+      }).success,
+    ).toBe(true);
+
+    expect(
+      AgentResponseSchema.safeParse({
+        type: "terminal.exit",
+        terminalId: "term_x",
+        code: 0,
       }).success,
     ).toBe(true);
 

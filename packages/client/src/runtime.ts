@@ -30,10 +30,36 @@ export interface ContainerRuntimeOptions {
   requestTimeoutMs?: number;
 }
 
+export interface ExecOptions {
+  cwd?: string;
+  timeoutMs?: number;
+  /** Aborting sends `exec.cancel`; the promise then rejects with OPERATION_CANCELLED. */
+  signal?: AbortSignal;
+  /** Incremental output preview; the final result still carries everything. */
+  onOutput?: (event: { stream: "stdout" | "stderr"; data: string }) => void;
+}
+
+export interface OpenTerminalOptions {
+  cols?: number;
+  rows?: number;
+  term?: string;
+  onOutput?: (data: string) => void;
+  onExit?: (code: number | null) => void;
+}
+
+/** A programmable PTY on the agent connection. */
+export interface AgentTerminal {
+  id: string;
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  close(): void;
+}
+
 interface PendingRequest {
   resolve: (response: AgentResponse) => void;
   reject: (error: SessionBoxClientError) => void;
   timer: ReturnType<typeof setTimeout>;
+  onStream?: (message: Extract<AgentResponse, { type: "exec.stdout" | "exec.stderr" }>) => void;
   cleanup?: () => void;
 }
 
@@ -56,6 +82,10 @@ export class ContainerRuntime {
 
   private socket: WebSocketLike | null = null;
   private readonly pending = new Map<string, PendingRequest>();
+  private readonly terminalHandlers = new Map<
+    string,
+    { onOutput?: (data: string) => void; onExit?: (code: number | null) => void }
+  >();
   private handshake: { resolve: () => void; reject: (error: SessionBoxClientError) => void } | null =
     null;
 
@@ -122,10 +152,7 @@ export class ContainerRuntime {
     await welcome;
   }
 
-  async exec(
-    command: string,
-    options: { cwd?: string; timeoutMs?: number; signal?: AbortSignal } = {},
-  ): Promise<ExecResult> {
+  async exec(command: string, options: ExecOptions = {}): Promise<ExecResult> {
     const response = await this.request(
       {
         type: "exec",
@@ -137,6 +164,15 @@ export class ContainerRuntime {
         // Wait slightly longer than the server-side timeout so its answer wins.
         timeoutMs: (options.timeoutMs ?? DEFAULT_EXEC_TIMEOUT_MS) + EXEC_TIMEOUT_GRACE_MS,
         ...(options.signal !== undefined ? { signal: options.signal } : {}),
+        ...(options.onOutput !== undefined
+          ? {
+              onStream: (message) =>
+                options.onOutput?.({
+                  stream: message.type === "exec.stdout" ? "stdout" : "stderr",
+                  data: message.data,
+                }),
+            }
+          : {}),
       },
     );
     if (response.type !== "exec.result") {
@@ -145,20 +181,41 @@ export class ContainerRuntime {
     return { exitCode: response.exitCode, stdout: response.stdout, stderr: response.stderr };
   }
 
-  async readFile(path: string): Promise<FileContent> {
-    const response = await this.request({ type: "file.read", path });
+  async readFile(
+    path: string,
+    options: { offset?: number; length?: number } = {},
+  ): Promise<FileContent> {
+    const response = await this.request({
+      type: "file.read",
+      path,
+      ...(options.offset !== undefined ? { offset: options.offset } : {}),
+      ...(options.length !== undefined ? { length: options.length } : {}),
+    });
     if (response.type !== "file.read.result") throw unexpected(response.type);
     return response.file;
   }
 
-  async readBytes(path: string): Promise<FileBytes> {
-    const response = await this.request({ type: "file.readBytes", path });
+  async readBytes(path: string, options: { maxBytes?: number } = {}): Promise<FileBytes> {
+    const response = await this.request({
+      type: "file.readBytes",
+      path,
+      ...(options.maxBytes !== undefined ? { maxBytes: options.maxBytes } : {}),
+    });
     if (response.type !== "file.readBytes.result") throw unexpected(response.type);
     return response.file;
   }
 
-  async writeFile(path: string, content: string): Promise<FileMetadata> {
-    const response = await this.request({ type: "file.write", path, content });
+  async writeFile(
+    path: string,
+    content: string,
+    options: { expected?: { version: string } } = {},
+  ): Promise<FileMetadata> {
+    const response = await this.request({
+      type: "file.write",
+      path,
+      content,
+      ...(options.expected !== undefined ? { expected: options.expected } : {}),
+    });
     if (response.type !== "file.write.result") throw unexpected(response.type);
     return response.file;
   }
@@ -169,10 +226,61 @@ export class ContainerRuntime {
     return { path: response.path, entries: response.entries };
   }
 
-  async statFile(path: string): Promise<FileEntry> {
-    const response = await this.request({ type: "file.stat", path });
+  async statFile(path: string, options: { follow?: boolean } = {}): Promise<FileEntry> {
+    const response = await this.request({
+      type: "file.stat",
+      path,
+      ...(options.follow !== undefined ? { follow: options.follow } : {}),
+    });
     if (response.type !== "file.stat.result") throw unexpected(response.type);
     return response.entry;
+  }
+
+  async rename(from: string, to: string, options: { overwrite?: boolean } = {}): Promise<void> {
+    const response = await this.request({
+      type: "file.rename",
+      from,
+      to,
+      ...(options.overwrite !== undefined ? { overwrite: options.overwrite } : {}),
+    });
+    if (response.type !== "file.rename.result") throw unexpected(response.type);
+  }
+
+  async chmod(path: string, mode: number): Promise<void> {
+    const response = await this.request({ type: "file.chmod", path, mode });
+    if (response.type !== "file.chmod.result") throw unexpected(response.type);
+  }
+
+  async symlink(path: string, target: string): Promise<void> {
+    const response = await this.request({ type: "file.symlink", path, target });
+    if (response.type !== "file.symlink.result") throw unexpected(response.type);
+  }
+
+  /** Opens a PTY; output arrives through the returned handle's callbacks. */
+  async openTerminal(options: OpenTerminalOptions = {}): Promise<AgentTerminal> {
+    const response = await this.request({
+      type: "terminal.open",
+      cols: options.cols ?? 80,
+      rows: options.rows ?? 24,
+      ...(options.term !== undefined ? { term: options.term } : {}),
+    });
+    if (response.type !== "terminal.opened") throw unexpected(response.type);
+
+    const terminalId = response.terminalId;
+    this.terminalHandlers.set(terminalId, {
+      ...(options.onOutput !== undefined ? { onOutput: options.onOutput } : {}),
+      ...(options.onExit !== undefined ? { onExit: options.onExit } : {}),
+    });
+
+    return {
+      id: terminalId,
+      write: (data) => this.sendFrame({ type: "terminal.input", terminalId, data }),
+      resize: (cols, rows) => this.sendFrame({ type: "terminal.resize", terminalId, cols, rows }),
+      close: () => {
+        this.terminalHandlers.delete(terminalId);
+        this.sendFrame({ type: "terminal.close", terminalId });
+      },
+    };
   }
 
   async mkdir(path: string, options: { recursive?: boolean } = {}): Promise<void> {
@@ -197,12 +305,17 @@ export class ContainerRuntime {
     const socket = this.socket;
     this.socket = null;
     this.rejectPending(new SessionBoxClientError("INVALID_STATE", "runtime was closed"));
+    this.failTerminals(null);
     if (socket !== null) socket.close();
   }
 
   private async request(
     payload: RequestPayload,
-    options: { timeoutMs?: number; signal?: AbortSignal } = {},
+    options: {
+      timeoutMs?: number;
+      signal?: AbortSignal;
+      onStream?: (message: Extract<AgentResponse, { type: "exec.stdout" | "exec.stderr" }>) => void;
+    } = {},
   ): Promise<AgentResponse> {
     const socket = this.socket;
     if (socket === null || socket.readyState !== READY_STATE_OPEN) {
@@ -219,7 +332,12 @@ export class ContainerRuntime {
         }
       }, options.timeoutMs ?? this.requestTimeoutMs);
 
-      const entry: PendingRequest = { resolve, reject, timer };
+      const entry: PendingRequest = {
+        resolve,
+        reject,
+        timer,
+        ...(options.onStream !== undefined ? { onStream: options.onStream } : {}),
+      };
       if (options.signal !== undefined) {
         const onAbort = (): void => this.sendCancel(requestId);
         options.signal.addEventListener("abort", onAbort, { once: true });
@@ -265,6 +383,17 @@ export class ContainerRuntime {
     }
   }
 
+  /** Sends a one-way control frame (terminal input/resize/close). */
+  private sendFrame(payload: RequestPayload): void {
+    const socket = this.socket;
+    if (socket === null || socket.readyState !== READY_STATE_OPEN) return;
+    try {
+      socket.send(JSON.stringify(payload));
+    } catch {
+      // The connection is gone; terminal handlers fail on close.
+    }
+  }
+
   private takePending(requestId: string): PendingRequest | undefined {
     const pending = this.pending.get(requestId);
     if (pending === undefined) return undefined;
@@ -294,11 +423,28 @@ export class ContainerRuntime {
     if (!response.success) return;
 
     const message = response.data;
+
+    // Non-terminal frames never settle a request.
+    if (message.type === "exec.stdout" || message.type === "exec.stderr") {
+      this.pending.get(message.requestId)?.onStream?.(message);
+      return;
+    }
+    if (message.type === "terminal.output" || message.type === "terminal.exit") {
+      const handler = this.terminalHandlers.get(message.terminalId);
+      if (message.type === "terminal.output") {
+        handler?.onOutput?.(message.data);
+      } else {
+        this.terminalHandlers.delete(message.terminalId);
+        handler?.onExit?.(message.code);
+      }
+      return;
+    }
+
     const pending = this.takePending(message.requestId ?? "");
     if (pending === undefined) return;
 
     if (message.type === "error") {
-      pending.reject(new SessionBoxClientError(message.code, message.message));
+      pending.reject(new SessionBoxClientError(message.code, message.message, message.details));
       return;
     }
     pending.resolve(message);
@@ -312,6 +458,14 @@ export class ContainerRuntime {
       handshake.reject(new SessionBoxClientError("SSH_UNAVAILABLE", "agent connection closed"));
     }
     this.rejectPending(new SessionBoxClientError("SSH_UNAVAILABLE", "agent connection closed"));
+    this.failTerminals(null);
+  }
+
+  private failTerminals(code: number | null): void {
+    for (const handler of this.terminalHandlers.values()) {
+      handler.onExit?.(code);
+    }
+    this.terminalHandlers.clear();
   }
 
   private rejectPending(error: SessionBoxClientError): void {

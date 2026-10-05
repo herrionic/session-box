@@ -6,32 +6,37 @@ import {
   type AgentResponse,
   type SessionBoxErrorCode,
 } from "@sessionbox/protocol";
+import { newUlid } from "@sessionbox/shared";
 import type { FastifyBaseLogger } from "fastify";
 import type { WebSocket } from "ws";
 import type { AgentGateway } from "../../agent/gateway.ts";
 import { PERMISSIONS, requirePermission } from "../../auth/principals.ts";
 import { isSessionBoxError } from "../../errors.ts";
 import type { ContainerService } from "../../container/service.ts";
-import { DEFAULT_EXEC_TIMEOUT_MS } from "../../ssh/session.ts";
+import { DEFAULT_EXEC_TIMEOUT_MS, type SshShell } from "../../ssh/session.ts";
 import type { SessionBoxApp } from "../types.ts";
 
 const HANDSHAKE_TIMEOUT_MS = 10_000;
 /** Grace on top of the exec timeout before the route gives up on a request. */
 const EXEC_DEADLINE_GRACE_MS = 2_000;
-/** Last-resort deadline for file operations (SFTP round trips have their own bound). */
+/** Last-resort deadline for file and terminal operations (SFTP round trips are bounded). */
 const FILE_REQUEST_DEADLINE_MS = 60_000;
+const DEFAULT_MAX_EXEC_TIMEOUT_MS = 30 * 60_000;
 
 type AgentServerMessage = AgentResponse | { type: "welcome"; protocolVersion: number };
+
+interface AgentRouteDeps {
+  gateway: AgentGateway;
+  service: ContainerService;
+  limits?: { maxExecTimeoutMs?: number };
+}
 
 /**
  * Agent WebSocket gateway: handshake (hello/welcome), then validated requests
  * dispatched through the agent gateway. A disconnect only ends temporary
  * access — it never stops or deletes the container (PROJECT.md §39).
  */
-export function registerAgentRoutes(
-  app: SessionBoxApp,
-  deps: { gateway: AgentGateway; service: ContainerService },
-): void {
+export function registerAgentRoutes(app: SessionBoxApp, deps: AgentRouteDeps): void {
   app.get("/api/ws/agent", { websocket: true }, (socket, request) => {
     handleAgent(socket, request, deps);
   });
@@ -40,25 +45,35 @@ export function registerAgentRoutes(
 function handleAgent(
   socket: WebSocket,
   request: { log: FastifyBaseLogger; principal?: { id: string; permissions: string[]; type: "plugin" | "user" } },
-  deps: { gateway: AgentGateway; service: ContainerService },
+  deps: AgentRouteDeps,
 ): void {
   const trackedContainers = new Set<string>();
   /** In-flight execs on this connection, addressable by `exec.cancel`. */
   const inflightExecs = new Map<string, { controller: AbortController; containerId: string }>();
+  /** PTY sessions on this connection, addressable by `terminalId`. */
+  const terminals = new Map<string, { shell: SshShell; containerId: string }>();
   const gateway = deps.gateway;
   const service = deps.service;
+  const maxExecTimeoutMs = deps.limits?.maxExecTimeoutMs ?? DEFAULT_MAX_EXEC_TIMEOUT_MS;
+
   const send = (message: AgentServerMessage): void => {
     if (socket.readyState === socket.OPEN) {
       socket.send(JSON.stringify(message));
     }
   };
 
-  const fail = (code: SessionBoxErrorCode, message: string, requestId?: string): void => {
+  const fail = (
+    code: SessionBoxErrorCode,
+    message: string,
+    requestId?: string,
+    details?: unknown,
+  ): void => {
     send({
       type: "error",
       code,
       message,
       ...(requestId !== undefined ? { requestId } : {}),
+      ...(details !== undefined ? { details } : {}),
     });
   };
 
@@ -86,6 +101,65 @@ function handleAgent(
       requestId: cancel.requestId,
       targetRequestId: cancel.targetRequestId,
     });
+  };
+
+  /** One-way PTY control frames; unknown terminals are ignored (no response). */
+  const handleTerminalControl = (
+    frame: Extract<
+      AgentRequest,
+      { type: "terminal.input" | "terminal.resize" | "terminal.close" }
+    >,
+  ): void => {
+    const terminal = terminals.get(frame.terminalId);
+    if (terminal === undefined) {
+      request.log.debug(
+        { event: "agent.terminal_unknown", terminalId: frame.terminalId },
+        "terminal frame for an unknown terminal",
+      );
+      return;
+    }
+
+    if (frame.type === "terminal.input") {
+      terminal.shell.write(frame.data);
+    } else if (frame.type === "terminal.resize") {
+      terminal.shell.resize(frame.cols, frame.rows);
+    } else {
+      terminals.delete(frame.terminalId);
+      terminal.shell.close();
+    }
+  };
+
+  /** Opens a PTY and registers it under a fresh terminalId. */
+  const openTerminal = async (
+    open: Extract<AgentRequest, { type: "terminal.open" }>,
+  ): Promise<AgentResponse> => {
+    const session = await service.openSshSession(open.containerId);
+    const terminalId = `term_${newUlid()}`;
+    const shell = await session.openShell({
+      cols: open.cols,
+      rows: open.rows,
+      ...(open.term !== undefined ? { term: open.term } : {}),
+      onData: (data) => send({ type: "terminal.output", terminalId, data }),
+      onExit: (code) => {
+        // An explicitly closed terminal is already gone; only report the exit
+        // of shells that ended on their own.
+        if (!terminals.delete(terminalId)) return;
+        send({ type: "terminal.exit", terminalId, code });
+      },
+      onError: (error) => {
+        request.log.warn(
+          { event: "agent.terminal_error", terminalId, err: error.message },
+          "agent terminal error",
+        );
+      },
+    });
+
+    terminals.set(terminalId, { shell, containerId: open.containerId });
+    request.log.info(
+      { event: "agent.terminal_opened", containerId: open.containerId, terminalId },
+      "agent terminal opened",
+    );
+    return { type: "terminal.opened", requestId: open.requestId, terminalId };
   };
 
   let greeted = false;
@@ -139,6 +213,16 @@ function handleAgent(
       }
 
       const agentRequest = parsedRequest.data;
+
+      // One-way frames and connection-scoped operations never reach the gateway.
+      if (
+        agentRequest.type === "terminal.input" ||
+        agentRequest.type === "terminal.resize" ||
+        agentRequest.type === "terminal.close"
+      ) {
+        handleTerminalControl(agentRequest);
+        return;
+      }
       if (agentRequest.type === "exec.cancel") {
         handleCancel(agentRequest);
         return;
@@ -150,7 +234,8 @@ function handleAgent(
       const controller = new AbortController();
       const deadlineMs =
         agentRequest.type === "exec"
-          ? (agentRequest.timeoutMs ?? DEFAULT_EXEC_TIMEOUT_MS) + EXEC_DEADLINE_GRACE_MS
+          ? Math.min(agentRequest.timeoutMs ?? DEFAULT_EXEC_TIMEOUT_MS, maxExecTimeoutMs) +
+            EXEC_DEADLINE_GRACE_MS
           : FILE_REQUEST_DEADLINE_MS;
 
       const finish = (respond: () => void): void => {
@@ -185,11 +270,21 @@ function handleAgent(
         }
         await service.touch(agentRequest.containerId);
 
-        const response = await gateway.handle(agentRequest, { signal: controller.signal });
+        let response: AgentResponse;
+        if (agentRequest.type === "terminal.open") {
+          response = await openTerminal(agentRequest);
+        } else {
+          response = await gateway.handle(agentRequest, {
+            signal: controller.signal,
+            onStream: (event) => {
+              if (!settled) send(event);
+            },
+          });
+        }
         finish(() => send(response));
       } catch (error) {
         if (isSessionBoxError(error)) {
-          finish(() => fail(error.code, error.message, agentRequest.requestId));
+          finish(() => fail(error.code, error.message, agentRequest.requestId, error.details));
           return;
         }
         request.log.error(
@@ -219,6 +314,10 @@ function handleAgent(
       controller.abort();
     }
     inflightExecs.clear();
+    for (const { shell } of terminals.values()) {
+      shell.close();
+    }
+    terminals.clear();
     for (const containerId of trackedContainers) {
       void service.release(containerId);
     }
@@ -228,8 +327,24 @@ function handleAgent(
 }
 
 function permissionFor(type: AgentRequest["type"]): string {
-  if (type === "exec" || type === "exec.cancel") return PERMISSIONS.execute;
-  if (type === "file.write" || type === "file.mkdir" || type === "file.remove") {
+  if (
+    type === "exec" ||
+    type === "exec.cancel" ||
+    type === "terminal.open" ||
+    type === "terminal.input" ||
+    type === "terminal.resize" ||
+    type === "terminal.close"
+  ) {
+    return PERMISSIONS.execute;
+  }
+  if (
+    type === "file.write" ||
+    type === "file.rename" ||
+    type === "file.chmod" ||
+    type === "file.symlink" ||
+    type === "file.mkdir" ||
+    type === "file.remove"
+  ) {
     return PERMISSIONS.write;
   }
   return PERMISSIONS.read;

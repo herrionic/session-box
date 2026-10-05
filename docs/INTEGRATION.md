@@ -61,26 +61,39 @@ private network and is reachable by the server only.
 1. Handshake: send `{ "type": "hello", "protocolVersion": 2, "client": "<name>" }`
    and expect `{ "type": "welcome", "protocolVersion": 2 }`. A version mismatch
    is rejected; there is no negotiation or fallback.
-2. Requests are validated and correlated by `requestId`; one connection
-   multiplexes every operation for the bound container.
+2. Requests are validated and correlated by `requestId`; one connection may
+   serve several containers.
 3. Operations: `exec`, `exec.cancel`, `file.read`, `file.readBytes`,
-   `file.write`, `file.list`, `file.stat`, `file.mkdir`, `file.remove` — exact
-   shapes in [`PROTOCOL.md`](PROTOCOL.md) §2.
+   `file.write`, `file.rename`, `file.chmod`, `file.symlink`, `file.list`,
+   `file.stat`, `file.mkdir`, `file.remove`, `terminal.open` — exact shapes in
+   [`PROTOCOL.md`](PROTOCOL.md) §2. `terminal.input`/`resize`/`close` are
+   one-way control frames.
 4. `exec` carries `command`, optional `cwd` and `timeoutMs`, and runs through a
    real SSH channel as the non-root `agent` user (uid 1000) inside the
-   container. `exec.cancel` targets an in-flight exec by `requestId` and kills
-   its whole process group; the target then fails with `OPERATION_CANCELLED`.
+   container. `exec.stdout`/`exec.stderr` frames preview output while it runs;
+   the terminal response is always `exec.result` with the complete output.
+   `exec.cancel` targets an in-flight exec by `requestId` and kills its whole
+   process group; the target then fails with `OPERATION_CANCELLED`.
 5. Files: `file.read` is text-only and fails with `FS_NOT_TEXT` when the
    content is not valid UTF-8 or contains NUL bytes; `file.readBytes` returns
-   base64 for binary content. Paths are absolute container paths — nothing is
-   confined to the workspace, because the container is the isolation boundary.
-6. Every request receives exactly one result or error frame, even under
+   base64 for binary content; `offset`/`length` read large files in ranges.
+   Writes are atomic (temp + rename) and accept an opaque `version` guard
+   (`VERSION_CONFLICT` on mismatch; full reads/writes carry a content digest,
+   list/stat versions are the cheaper `mtime:size` form); `file.stat` supports
+   lstat semantics (`follow: false`) for symlink safety. Paths are absolute
+   container paths — nothing is confined to the workspace, because the
+   container is the isolation boundary.
+6. Terminals: `terminal.open` allocates a programmable PTY (persistent `cd`,
+   interactive REPLs); output and exit arrive as events keyed by
+   `terminalId`.
+7. Every request receives exactly one result or error frame, even under
    concurrency; requests that exceed their deadline fail with
    `OPERATION_TIMEOUT`.
-7. Failures use stable codes (`CONTAINER_NOT_FOUND`, `CONTAINER_NOT_RUNNING`,
+8. Failures use stable codes (`CONTAINER_NOT_FOUND`, `CONTAINER_NOT_RUNNING`,
    `OPERATION_TIMEOUT`, `OPERATION_CANCELLED`, `SSH_UNAVAILABLE`,
-   `INVALID_REQUEST`, `FS_NOT_TEXT`, `RUNTIME_ERROR`, …). Reconnect and retry
-   on transport errors; treat `CONTAINER_NOT_FOUND` as terminal.
+   `INVALID_REQUEST`, `FS_*`, `VERSION_CONFLICT`, `RUNTIME_ERROR`, …); the full
+   table lives in [`PROTOCOL.md`](PROTOCOL.md) §4. Reconnect and retry on
+   transport errors; treat `CONTAINER_NOT_FOUND` as terminal.
 
 ## 4. Session → container binding
 
@@ -130,7 +143,7 @@ product decision, not the default.
 ## 6. Lifecycle and ownership
 
 - A client disconnect never stops or deletes a container (PROJECT.md §39); it
-  does cancel execs that were in flight on that connection.
+  does stop execs and terminals that were in flight on that connection.
 - Open agent or terminal connections count as activity; idle auto-stop only
   applies while no connection is active.
 - `deleteAfterStop` removes the container; otherwise it stays `stopped` and can

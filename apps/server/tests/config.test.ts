@@ -20,6 +20,7 @@ describe("loadConfig", () => {
       },
       auth: { clients: [] },
       lifecycle: { intervalMs: 15_000 },
+      limits: { maxCommandBytes: 1024 * 1024, maxExecTimeoutMs: 30 * 60_000 },
     });
     expect(config.databaseFile).toBe(join("./data", "sessionbox.db"));
   });
@@ -68,6 +69,15 @@ describe("loadConfig", () => {
   it("reads the master key when it is configured", () => {
     const config = loadConfig({ SESSIONBOX_MASTER_KEY: "c2VjcmV0" });
     expect(config.masterKey).toBe("c2VjcmV0");
+  });
+
+  it("parses exec limit overrides", () => {
+    const config = loadConfig({
+      SESSIONBOX_MAX_EXEC_COMMAND_BYTES: "2048",
+      SESSIONBOX_MAX_EXEC_TIMEOUT_MS: "60000",
+    });
+
+    expect(config.limits).toEqual({ maxCommandBytes: 2048, maxExecTimeoutMs: 60_000 });
   });
 
   it("rejects runtimes that are not implemented yet", () => {

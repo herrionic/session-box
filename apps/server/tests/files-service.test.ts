@@ -115,7 +115,7 @@ describe("ContainerFilesService", () => {
     ssh.ensureFile("/workspace/big.txt", Buffer.alloc(FILE_LIMITS.maxTextFileBytes + 1, 65));
 
     await expect(files.readText(container.id, "/workspace/big.txt")).rejects.toMatchObject({
-      code: "INVALID_REQUEST",
+      code: "FS_TOO_LARGE",
     });
   });
 

@@ -1,6 +1,12 @@
 export { SessionBoxClient, type SessionBoxClientOptions } from "./client.ts";
 export { SessionBoxClientError } from "./errors.ts";
-export { ContainerRuntime, type ContainerRuntimeOptions } from "./runtime.ts";
+export {
+  ContainerRuntime,
+  type AgentTerminal,
+  type ContainerRuntimeOptions,
+  type ExecOptions,
+  type OpenTerminalOptions,
+} from "./runtime.ts";
 export {
   defaultWebSocketFactory,
   READY_STATE_OPEN,

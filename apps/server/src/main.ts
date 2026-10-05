@@ -69,7 +69,7 @@ async function main(): Promise<void> {
     containers: service,
     logger,
   });
-  const gateway = new AgentGateway(service, logger);
+  const gateway = new AgentGateway(service, logger, config.limits ?? {});
   const networks = new NetworkService({
     runtime,
     repository,

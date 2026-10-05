@@ -11,6 +11,14 @@ export interface DockerRuntimeConfig {
   workspace: string;
 }
 
+/** Per-deployment limits; the protocol schemas define the absolute wire caps. */
+export interface LimitsConfig {
+  /** Maximum bytes for one exec command (default 1 MiB). */
+  maxCommandBytes: number;
+  /** Maximum exec timeout in milliseconds (default 30 min). */
+  maxExecTimeoutMs: number;
+}
+
 export interface ServerConfig {
   host: string;
   port: number;
@@ -27,6 +35,8 @@ export interface ServerConfig {
     /** How often the auto-stop policy is evaluated. */
     intervalMs: number;
   };
+  /** Optional so API-only tests keep working with the built-in defaults. */
+  limits?: LimitsConfig;
 }
 
 /**
@@ -65,6 +75,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     },
     lifecycle: {
       intervalMs: parsePositiveInteger(env.SESSIONBOX_LIFECYCLE_INTERVAL_MS, "SESSIONBOX_LIFECYCLE_INTERVAL_MS") ?? 15_000,
+    },
+    limits: {
+      maxCommandBytes:
+        parsePositiveInteger(env.SESSIONBOX_MAX_EXEC_COMMAND_BYTES, "SESSIONBOX_MAX_EXEC_COMMAND_BYTES") ??
+        1024 * 1024,
+      maxExecTimeoutMs:
+        parsePositiveInteger(env.SESSIONBOX_MAX_EXEC_TIMEOUT_MS, "SESSIONBOX_MAX_EXEC_TIMEOUT_MS") ??
+        30 * 60_000,
     },
     docker: {
       socketPath: env.SESSIONBOX_DOCKER_SOCKET?.trim() || "/var/run/docker.sock",

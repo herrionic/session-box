@@ -52,12 +52,10 @@ export class ContainerFilesService {
     const target = this.resolve(path);
     return await this.run(containerId, async (session) => {
       const entry = await session.stat(target);
-      if (entry.type !== "file") {
-        throw new SessionBoxError("INVALID_REQUEST", "only regular files can be viewed as text");
-      }
+      assertRegularFile(entry);
       if (entry.size > this.maxTextFileBytes) {
         throw new SessionBoxError(
-          "INVALID_REQUEST",
+          "FS_TOO_LARGE",
           `file exceeds the ${this.maxTextFileBytes} byte text limit; download it instead`,
         );
       }
@@ -74,6 +72,10 @@ export class ContainerFilesService {
         content: content.toString("utf8"),
         size: entry.size,
         modifiedAt: entry.modifiedAt,
+        version: entry.version,
+        offset: 0,
+        length: content.length,
+        eof: true,
       };
     });
   }
@@ -83,19 +85,23 @@ export class ContainerFilesService {
     const bytes = Buffer.byteLength(request.content, "utf8");
     if (bytes > this.maxTextFileBytes) {
       throw new SessionBoxError(
-        "INVALID_REQUEST",
+        "FS_TOO_LARGE",
         `content exceeds the ${this.maxTextFileBytes} byte text limit`,
       );
     }
 
     return await this.run(containerId, async (session) => {
-      await session.writeFile(target, request.content);
+      await session.writeFileAtomic(target, request.content);
       const entry = await session.stat(target);
       return {
         path: target,
         content: request.content,
         size: entry.size,
         modifiedAt: entry.modifiedAt,
+        version: entry.version,
+        offset: 0,
+        length: bytes,
+        eof: true,
       };
     });
   }
@@ -106,7 +112,7 @@ export class ContainerFilesService {
       if (request.type === "directory") {
         await session.mkdir(target, { recursive: true });
       } else {
-        await session.writeFile(target, "");
+        await session.writeFileAtomic(target, "");
       }
       return toFileEntry(await session.stat(target));
     });
@@ -123,14 +129,14 @@ export class ContainerFilesService {
   async upload(containerId: string, path: string, content: Buffer): Promise<FileEntry> {
     if (content.length > this.maxUploadBytes) {
       throw new SessionBoxError(
-        "INVALID_REQUEST",
+        "FS_TOO_LARGE",
         `upload exceeds the ${this.maxUploadBytes} byte limit`,
       );
     }
 
     const target = this.resolve(path);
     return await this.run(containerId, async (session) => {
-      await session.writeFile(target, content);
+      await session.writeFileAtomic(target, content);
       return toFileEntry(await session.stat(target));
     });
   }
@@ -142,12 +148,10 @@ export class ContainerFilesService {
     const target = this.resolve(path);
     return await this.run(containerId, async (session) => {
       const entry = await session.stat(target);
-      if (entry.type !== "file") {
-        throw new SessionBoxError("INVALID_REQUEST", "only regular files can be downloaded");
-      }
+      assertRegularFile(entry);
       if (entry.size > this.maxUploadBytes) {
         throw new SessionBoxError(
-          "INVALID_REQUEST",
+          "FS_TOO_LARGE",
           `file exceeds the ${this.maxUploadBytes} byte download limit`,
         );
       }
@@ -181,5 +185,16 @@ function toFileEntry(entry: FileEntry): FileEntry {
     size: entry.size,
     mode: entry.mode,
     modifiedAt: entry.modifiedAt,
+    version: entry.version,
+    ...(entry.linkTarget !== undefined ? { linkTarget: entry.linkTarget } : {}),
   };
+}
+
+function assertRegularFile(entry: { type: string }): void {
+  if (entry.type === "directory") {
+    throw new SessionBoxError("FS_IS_DIRECTORY", "the path is a directory");
+  }
+  if (entry.type !== "file") {
+    throw new SessionBoxError("FS_NOT_REGULAR_FILE", "only regular files are supported here");
+  }
 }

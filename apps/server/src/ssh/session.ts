@@ -3,6 +3,9 @@ export interface SshExecOptions {
   timeoutMs?: number;
   /** Aborts the command and kills its process group. */
   signal?: AbortSignal;
+  /** Incremental stdout/stderr preview (the final result still carries everything). */
+  onStdout?: (data: string) => void;
+  onStderr?: (data: string) => void;
 }
 
 /** Default exec timeout; also used by the agent route as its deadline base. */
@@ -24,6 +27,10 @@ export interface SshFileEntry {
   mode: number;
   /** Epoch milliseconds. */
   modifiedAt: number;
+  /** Opaque optimistic-concurrency version (`<mtimeMs>:<size>`). */
+  version: string;
+  /** Symlink target, only when the entry was observed without following. */
+  linkTarget?: string;
 }
 
 export interface SshShellOptions {
@@ -50,11 +57,19 @@ export interface SshShell {
 export interface SshSession {
   exec(command: string, options?: SshExecOptions): Promise<SshExecResult>;
   readFile(path: string): Promise<Buffer>;
+  /** Reads `length` bytes starting at `offset` (0-based). */
+  readFileRange(path: string, offset: number, length: number): Promise<Buffer>;
   writeFile(path: string, content: Buffer | string): Promise<void>;
+  /** Same-directory temp file + rename, so readers never see a partial file. */
+  writeFileAtomic(path: string, content: Buffer | string): Promise<void>;
   list(path: string): Promise<SshFileEntry[]>;
-  stat(path: string): Promise<SshFileEntry>;
+  /** `follow: false` behaves like lstat and fills `linkTarget` for symlinks. */
+  stat(path: string, options?: { follow?: boolean }): Promise<SshFileEntry>;
   mkdir(path: string, options?: { recursive?: boolean }): Promise<void>;
   remove(path: string, options?: { recursive?: boolean }): Promise<void>;
+  rename(from: string, to: string): Promise<void>;
+  chmod(path: string, mode: number): Promise<void>;
+  symlink(path: string, target: string): Promise<void>;
   openShell(options: SshShellOptions): Promise<SshShell>;
   close(): Promise<void>;
 }
@@ -100,6 +115,13 @@ export class SshNotFoundError extends SshError {
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, { ...options, dropsSession: false });
     this.name = "SshNotFoundError";
+  }
+}
+
+export class SshPermissionError extends SshError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, { ...options, dropsSession: false });
+    this.name = "SshPermissionError";
   }
 }
 
