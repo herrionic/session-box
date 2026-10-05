@@ -17,7 +17,7 @@ export interface AuthHookOptions {
   auth?: AuthService;
 }
 
-const PUBLIC_PATHS = ["/api/health", "/api/auth/login", "/api/auth/logout"];
+const PUBLIC_PATHS = ["/api/health", "/api/auth/login", "/api/auth/logout", "/api/setup"];
 
 /**
  * Authentication for the whole API except the public paths. Resolution order:
@@ -31,7 +31,10 @@ const PUBLIC_PATHS = ["/api/health", "/api/auth/login", "/api/auth/logout"];
  */
 export function createAuthHook(options: AuthHookOptions): (request: FastifyRequest) => Promise<void> {
   const { config, auth } = options;
-  const enforced = config.clients.length > 0 || (auth?.enforced ?? false);
+  // With the user system wired the API is always authenticated; the setup
+  // wizard and the login routes are public paths. Static clients alone also
+  // enforce auth. Only a bare development server stays open.
+  const enforced = config.clients.length > 0 || auth !== undefined;
 
   return async function authHook(request: FastifyRequest): Promise<void> {
     // `?token=` is a transport detail for WebSocket and download URLs; remove
@@ -76,7 +79,9 @@ export function createAuthHook(options: AuthHookOptions): (request: FastifyReque
 }
 
 function isPublicPath(url: string): boolean {
-  return PUBLIC_PATHS.some((path) => url === path || url.startsWith(`${path}?`));
+  return PUBLIC_PATHS.some(
+    (path) => url === path || url.startsWith(`${path}?`) || url.startsWith(`${path}/`),
+  );
 }
 
 export function extractToken(request: FastifyRequest): string | undefined {

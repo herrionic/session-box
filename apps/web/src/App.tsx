@@ -7,12 +7,25 @@ import { LoginPage } from "./pages/LoginPage.tsx";
 import { NetworksPage } from "./pages/NetworksPage.tsx";
 import { NewContainerPage } from "./pages/NewContainerPage.tsx";
 import { SettingsPage } from "./pages/SettingsPage.tsx";
+import { SetupPage } from "./pages/SetupPage.tsx";
 import { navigate, useRoute } from "./router.ts";
 
 export function App(): JSX.Element {
   const route = useRoute();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [ready, setReady] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        setNeedsSetup((await api.setupStatus()).needsSetup);
+      } catch {
+        // A failed probe must not block the app; fall back to the login page.
+        setNeedsSetup(false);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,8 +56,20 @@ export function App(): JSX.Element {
     navigate("/");
   }, []);
 
-  if (!ready) {
+  if (!ready || needsSetup === null) {
     return <div className="grid min-h-screen place-items-center text-slate-500">Loading…</div>;
+  }
+
+  if (needsSetup) {
+    return (
+      <SetupPage
+        onDone={(next) => {
+          setNeedsSetup(false);
+          setUser(next);
+          navigate("/");
+        }}
+      />
+    );
   }
 
   if (user === null) {

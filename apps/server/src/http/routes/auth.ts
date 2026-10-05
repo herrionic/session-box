@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { clearSessionCookie, readSessionCookie, sessionCookie } from "../../auth/cookies.ts";
+import {
+  clearSessionCookie,
+  readSessionCookie,
+  SESSION_MAX_AGE_SECONDS,
+  sessionCookie,
+} from "../../auth/cookies.ts";
 import { PERMISSIONS, requirePermission, type Principal } from "../../auth/principals.ts";
 import type { AuthService, PublicUser } from "../../auth/service.ts";
 import { SessionBoxError } from "../../errors.ts";
@@ -26,8 +31,6 @@ const TokenSchema = z.strictObject({
 const TokenParamsSchema = z.strictObject({
   id: z.string().min(1),
 });
-
-const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 
 /** Login/logout, profile, password and API token management (single owner). */
 export function registerAuthRoutes(app: SessionBoxApp, deps: { auth: AuthService }): void {

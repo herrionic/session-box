@@ -21,6 +21,7 @@ import { registerFileRoutes } from "./routes/files.ts";
 import { registerHealthRoutes } from "./routes/health.ts";
 import { registerNetworkRoutes } from "./routes/networks.ts";
 import { registerContainerRoutes } from "./routes/containers.ts";
+import { registerSetupRoutes } from "./routes/setup.ts";
 import { registerTerminalRoutes } from "./routes/terminal.ts";
 import type { SessionBoxApp } from "./types.ts";
 
@@ -116,6 +117,7 @@ export async function buildApp(deps: AppDependencies): Promise<SessionBoxApp> {
   registerHealthRoutes(app, { config: deps.config, runtime: deps.runtime });
   if (deps.auth !== undefined) {
     registerAuthRoutes(app, { auth: deps.auth });
+    registerSetupRoutes(app, { auth: deps.auth });
   }
   if (deps.networks !== undefined) {
     registerNetworkRoutes(app, { networks: deps.networks });

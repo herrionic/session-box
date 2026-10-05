@@ -153,6 +153,16 @@ export const api = {
       { cols: params?.cols, rows: params?.rows },
     )}`,
 
+  // ---- setup (first run) ------------------------------------------------
+  setupStatus: (): Promise<{ needsSetup: boolean }> => request("/api/setup/status"),
+
+  completeSetup: (input: {
+    username: string;
+    displayName?: string;
+    password: string;
+  }): Promise<{ user: SessionUser }> =>
+    request("/api/setup", { method: "POST", body: JSON.stringify(input) }),
+
   // ---- auth (single owner) ---------------------------------------------
   login: (username: string, password: string): Promise<{ user: SessionUser }> =>
     request("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),

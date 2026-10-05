@@ -68,34 +68,61 @@ export class AuthService {
     return this.enforcedFlag;
   }
 
+  /** True while no owner account exists (the setup wizard handles it). */
+  async needsSetup(): Promise<boolean> {
+    return (await this.users.count()) === 0;
+  }
+
   /**
-   * Creates the owner account on first start. Without a password the API
-   * stays open (development default) and a warning is logged.
+   * Creates the owner account from the setup wizard. Refuses once an owner
+   * exists, which is what lets the endpoint stay public.
+   */
+  async completeSetup(username: string, displayName: string, password: string): Promise<PublicUser> {
+    if (!(await this.needsSetup())) {
+      throw new SessionBoxError("INVALID_STATE", "setup has already been completed");
+    }
+    return await this.createOwner(username, displayName, password);
+  }
+
+  /**
+   * Optional environment-based seeding for automated deployments. Without a
+   * password the instance waits for the setup wizard instead.
    */
   async ensureOwner(username: string, password: string | undefined): Promise<void> {
-    const existing = await this.users.count();
-    this.enforcedFlag = existing > 0;
-    if (existing > 0) return;
+    if (!(await this.needsSetup())) {
+      this.enforcedFlag = true;
+      return;
+    }
 
     if (password === undefined || password === "") {
-      this.logger.warn(
-        { event: "auth.owner.not_configured" },
-        "no users yet and SESSIONBOX_ADMIN_PASSWORD is not set; the API stays open",
+      this.logger.info(
+        { event: "auth.setup.pending" },
+        "no owner account yet; the web UI shows the setup wizard on first visit",
       );
       return;
     }
 
+    await this.createOwner(username, username, password);
+  }
+
+  private async createOwner(
+    username: string,
+    displayName: string,
+    password: string,
+  ): Promise<PublicUser> {
     const now = nowIso(this.now());
-    await this.users.create({
+    const user: UserRecord = {
       id: newUserId(),
       username,
-      displayName: username,
+      displayName,
       passwordHash: await hashPassword(password),
       createdAt: now,
       updatedAt: now,
-    });
+    };
+    await this.users.create(user);
     this.enforcedFlag = true;
     this.logger.info({ event: "auth.owner.created", username }, "owner account created");
+    return toPublicUser(user);
   }
 
   async login(

@@ -2,6 +2,9 @@
 
 export const SESSION_COOKIE_NAME = "sessionbox_session";
 
+/** 30 days; shared by the login and setup routes. */
+export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+
 export function readSessionCookie(header: string | undefined): string | undefined {
   if (header === undefined || header === "") return undefined;
 

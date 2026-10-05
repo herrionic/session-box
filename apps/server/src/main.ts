@@ -1,7 +1,8 @@
+import { join } from "node:path";
 import { AgentGateway } from "./agent/gateway.ts";
 import { AuthService } from "./auth/service.ts";
 import { loadConfig } from "./config.ts";
-import { parseMasterKey } from "./credentials/master-key.ts";
+import { loadOrCreateMasterKey } from "./credentials/master-key.ts";
 import { EncryptedCredentialStore } from "./credentials/store.ts";
 import { ContainerFilesService } from "./files/service.ts";
 import { buildApp } from "./http/app.ts";
@@ -25,13 +26,11 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const logger = createLogger(config.logLevel);
 
-  const masterKey = parseMasterKey(config.masterKey);
-  if (masterKey === undefined) {
-    logger.warn(
-      { event: "server.master_key.missing" },
-      "SESSIONBOX_MASTER_KEY is not configured; container creation will fail until it is set",
-    );
-  }
+  const masterKey = loadOrCreateMasterKey({
+    ...(config.masterKey !== undefined ? { raw: config.masterKey } : {}),
+    file: join(config.dataDir, "master.key"),
+    logger,
+  });
 
   const database = openDatabase(config.databaseFile);
   const repository = new SqliteContainerRepository(database);
@@ -45,10 +44,10 @@ async function main(): Promise<void> {
     logger,
   });
   await auth.ensureOwner(config.auth.admin?.username ?? "admin", config.auth.admin?.password);
-  if (!auth.enforced && config.auth.clients.length === 0) {
-    logger.warn(
-      { event: "server.auth.disabled" },
-      "no owner account and no SESSIONBOX_CLIENTS configured; the API is open",
+  if (await auth.needsSetup()) {
+    logger.info(
+      { event: "auth.setup.pending" },
+      "waiting for the setup wizard; open the web UI to create the owner account",
     );
   }
 

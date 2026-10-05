@@ -11,6 +11,21 @@ Web Terminal, file management, authentication and human intervention.
 > Status: MVP in development. See `PROJECT.md` for the full specification,
 > `docs/ARCHITECTURE.md` for the design and `TASKS.md` for the current board.
 
+## Quick start (Docker)
+
+```bash
+docker build -t sessionbox/base:latest images/base
+docker compose up -d --build
+```
+
+Open the web UI on port **8787**. A setup wizard appears automatically on the
+first visit and creates the owner account — that is the only required step.
+Everything else works out of the box: the server generates and persists its own
+master key (`<data dir>/master.key`) and manages its network on the host.
+
+`.env` is optional and only used to override defaults for automated
+deployments (see `.env.example`).
+
 ## Repository layout
 
 ```
@@ -35,13 +50,9 @@ pnpm typecheck
 pnpm test
 ```
 
-Container creation needs `SESSIONBOX_MASTER_KEY` (base64, 32 bytes) to encrypt
-per-container SSH credentials:
-
-```bash
-openssl rand -base64 32
-# or: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-```
+The master key that encrypts per-container SSH credentials is generated and
+persisted automatically (`<data dir>/master.key`). Set `SESSIONBOX_MASTER_KEY`
+(base64, 32 bytes) only to override it.
 
 Docker is not required for unit/HTTP tests (they run against `FakeRuntime`),
 but container lifecycle, SSH/SFTP and the terminal need a Docker host.
@@ -52,14 +63,13 @@ The server is designed to run as a container on the Docker host it manages:
 
 ```bash
 # on the host (or via scripts/sync.ps1 + scripts/remote.ps1 from Windows)
-cp .env.example .env          # set SESSIONBOX_MASTER_KEY
 docker build -t sessionbox/base:latest images/base
 docker compose up -d --build
 ```
 
-The container mounts `/var/run/docker.sock`, creates container containers as
-siblings on the shared `sessionbox` bridge network, and never publishes container
-SSH ports. See `docs/ADR/0002-deployment-dood.md` for the security rationale.
+The container mounts `/var/run/docker.sock`, creates containers as siblings on
+its Docker host, and never publishes container SSH ports. See
+`docs/ADR/0002-deployment-dood.md` for the security rationale.
 
 From a Windows workstation:
 
