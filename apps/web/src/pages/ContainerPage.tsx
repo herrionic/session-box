@@ -4,6 +4,7 @@ import { api } from "../api.ts";
 import { FileBrowser } from "../components/FileBrowser.tsx";
 import { TerminalPanel } from "../components/TerminalPanel.tsx";
 import { Alert, Button, Card, Field, INPUT_CLASS, StatusBadge } from "../components/ui.tsx";
+import { PlayIcon, RestartIcon, StopIcon, TrashIcon } from "../components/Icons.tsx";
 import { describeError } from "../lib/errors.ts";
 import { navigate } from "../router.ts";
 
@@ -83,29 +84,37 @@ export function ContainerPage({ containerId }: { containerId: string }): JSX.Ele
           {container.status === "running" ? (
             <Button
               variant="secondary"
+              className="inline-flex items-center gap-1.5"
               disabled={busy}
               onClick={() => void act(() => api.stop(container.id))}
             >
-              Stop
+              <StopIcon /> Stop
             </Button>
           ) : (
             <Button
               variant="secondary"
+              className="inline-flex items-center gap-1.5"
               disabled={busy || container.status === "creating"}
               onClick={() => void act(() => api.start(container.id))}
             >
-              Start
+              <PlayIcon /> Start
             </Button>
           )}
           <Button
             variant="secondary"
+            className="inline-flex items-center gap-1.5"
             disabled={busy}
             onClick={() => void act(() => api.restart(container.id))}
           >
-            Restart
+            <RestartIcon /> Restart
           </Button>
-          <Button variant="danger" disabled={busy} onClick={() => void remove()}>
-            Delete
+          <Button
+            variant="danger"
+            className="inline-flex items-center gap-1.5"
+            disabled={busy}
+            onClick={() => void remove()}
+          >
+            <TrashIcon /> Delete
           </Button>
         </div>
       </div>

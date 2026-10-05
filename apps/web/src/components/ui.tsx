@@ -19,6 +19,31 @@ export function Button({
   return <button className={`${BUTTON_STYLES[variant]} ${className}`} {...rest} />;
 }
 
+const ICON_BUTTON_STYLES: Record<ButtonVariant, string> = {
+  primary:
+    "border-indigo-500 bg-indigo-500/90 text-white hover:bg-indigo-400",
+  secondary:
+    "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-slate-100",
+  danger: "border-rose-900/70 bg-rose-950/40 text-rose-300 hover:bg-rose-900/40",
+};
+
+export function IconButton({
+  label,
+  variant = "secondary",
+  className = "",
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; variant?: ButtonVariant }): JSX.Element {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition disabled:opacity-40 ${ICON_BUTTON_STYLES[variant]} ${className}`}
+      {...rest}
+    />
+  );
+}
+
 export function Card({
   title,
   actions,

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type JSX } from "react";
 import type { Container } from "@sessionbox/protocol";
 import { api } from "../api.ts";
-import { Alert, Button, Card, StatusBadge } from "../components/ui.tsx";
+import { Alert, Button, Card, IconButton, StatusBadge } from "../components/ui.tsx";
+import { OpenIcon, PlayIcon, RestartIcon, StopIcon, TrashIcon } from "../components/Icons.tsx";
 import { describeError } from "../lib/errors.ts";
 import { navigate } from "../router.ts";
 
@@ -101,49 +102,45 @@ export function ContainersPage(): JSX.Element {
                   {formatDate(container.createdAt)}
                 </td>
                 <td className="py-3 align-top">
-                  <div className="flex flex-col items-end gap-1">
-                    <Button
-                      variant="secondary"
-                      className="w-24"
+                  <div className="flex items-center justify-end gap-1">
+                    <IconButton
+                      label="Open"
                       onClick={() => navigate(`/containers/${container.id}`)}
                     >
-                      Open
-                    </Button>
+                      <OpenIcon />
+                    </IconButton>
                     {container.status === "running" ? (
-                      <Button
-                        variant="secondary"
-                        className="w-24"
+                      <IconButton
+                        label="Stop"
                         disabled={busyId === container.id}
                         onClick={() => void act(container.id, () => api.stop(container.id))}
                       >
-                        Stop
-                      </Button>
+                        <StopIcon />
+                      </IconButton>
                     ) : (
-                      <Button
-                        variant="secondary"
-                        className="w-24"
+                      <IconButton
+                        label="Start"
                         disabled={busyId === container.id || container.status === "creating"}
                         onClick={() => void act(container.id, () => api.start(container.id))}
                       >
-                        Start
-                      </Button>
+                        <PlayIcon />
+                      </IconButton>
                     )}
-                    <Button
-                      variant="secondary"
-                      className="w-24"
+                    <IconButton
+                      label="Restart"
                       disabled={busyId === container.id}
                       onClick={() => void act(container.id, () => api.restart(container.id))}
                     >
-                      Restart
-                    </Button>
-                    <Button
+                      <RestartIcon />
+                    </IconButton>
+                    <IconButton
+                      label="Delete"
                       variant="danger"
-                      className="w-24"
                       disabled={busyId === container.id}
                       onClick={() => void remove(container)}
                     >
-                      Delete
-                    </Button>
+                      <TrashIcon />
+                    </IconButton>
                   </div>
                 </td>
               </tr>
