@@ -41,13 +41,13 @@ Errors always use the stable envelope:
 
 ## 2. Agent WebSocket — `WS /api/ws/agent`
 
-### Handshake (protocol version 1)
+### Handshake (protocol version 2)
 
 ```jsonc
 // client → server
-{ "type": "hello", "protocolVersion": 1, "client": "dsh-plugin" }
+{ "type": "hello", "protocolVersion": 2, "client": "dsh-plugin" }
 // server → client
-{ "type": "welcome", "protocolVersion": 1 }
+{ "type": "welcome", "protocolVersion": 2 }
 ```
 
 A wrong version or a missing handshake (10 s timeout) closes the connection
