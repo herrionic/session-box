@@ -1,6 +1,6 @@
 import { Context } from "@deepseek-ai/cordis";
 import { afterEach, describe, expect, it } from "vitest";
-import { SessionBoxConnection, SessionBoxFileSystem, SessionBoxShell } from "@sessionbox/dsh-plugin";
+import { SessionBoxConnection, SessionBoxFileSystem, SessionBoxShell } from "@sessionbox/dsh-plugin/src/index.ts";
 import { AgentGateway } from "../src/agent/gateway.ts";
 import type { ServerConfig } from "../src/config.ts";
 import { InMemoryCredentialStore } from "../src/credentials/store.ts";

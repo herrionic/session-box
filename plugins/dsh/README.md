@@ -32,6 +32,55 @@ For per-session isolation run one DSH process per session, which is how the
 CLI/headless profiles work. A multi-session host (web/desktop) sharing one
 process would share one container — a known limitation.
 
+## Installation
+
+The package is a DSH **bundle**: installing it also inserts the plugin entry via
+`cordis.patch.yml`.
+
+### DSH Desktop / Web
+
+1. Build the tarball (repository checkout):
+
+   ```bash
+   pnpm --filter @sessionbox/dsh-plugin build
+   cd plugins/dsh && pnpm pack
+   ```
+
+2. In DSH open the sidebar **Plugins** page → install → enter the local path to
+   the tarball (for example `D:\coding\session-box\plugins\dsh\sessionbox-dsh-plugin-0.1.0.tgz`)
+   or to the `plugins/dsh` directory itself.
+
+3. Point it at your server and authenticate — add an id-targeted override to the
+   profile patch (`$DSH_HOME/profiles/<profile>/cordis.patch.yml`):
+
+   ```yaml
+   - id: sessionbox
+     config:
+       baseUrl: http://your-server:8787
+       token: sbt_…        # generate in SessionBox → Settings → API tokens
+   ```
+
+4. Restart DSH (or rely on HMR). The first session creates a container named
+   `dsh-<pid>`; set `containerName` to reuse one.
+
+### Manual install (no plugin UI)
+
+```bash
+# inside $DSH_HOME/profiles/<profile>
+pnpm add /path/to/sessionbox-dsh-plugin-0.1.0.tgz
+```
+
+Then add the insert entry to that profile's `cordis.patch.yml`:
+
+```yaml
+- insert:
+    - id: sessionbox
+      name: '@sessionbox/dsh-plugin'
+      config:
+        baseUrl: http://your-server:8787
+        token: sbt_…
+```
+
 ## Configuration
 
 `cordis.yml` plugin config or environment variables:
@@ -45,14 +94,7 @@ process would share one container — a known limitation.
 | `workspaceRoot` / `SESSIONBOX_WORKSPACE_ROOT` | `/workspace` | container-side root |
 | `hostCwd` / `SESSIONBOX_HOST_CWD` | `process.cwd()` | host directory that maps to the workspace |
 
-Example `cordis.yml` entry:
-
-```yaml
-plugins:
-  '@sessionbox/dsh-plugin':
-    baseUrl: http://localhost:8787
-    containerName: dsh-dev
-```
+Environment variables remain the fallback when the entry config omits a key.
 
 ## Smoke test without the harness
 

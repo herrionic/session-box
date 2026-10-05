@@ -33,3 +33,6 @@ Thumbs.db
 # vendored reference sources (agent harnesses) �� never commit
 .vendor/
 *.zip
+
+# package tarballs
+*.tgz
