@@ -1,6 +1,11 @@
 import { SessionBoxError } from "../errors.ts";
 import type { Logger } from "../logging.ts";
-import { SshNotFoundError, SshTimeoutError, SshUnavailableError } from "./session.ts";
+import {
+  SshCancelledError,
+  SshNotFoundError,
+  SshTimeoutError,
+  SshUnavailableError,
+} from "./session.ts";
 
 /**
  * Maps SSH-layer failures to stable public error codes and keeps the details
@@ -16,6 +21,11 @@ export function toPublicSshError(error: unknown, logger: Logger, event: string):
   }
   if (error instanceof SshTimeoutError) {
     return new SessionBoxError("OPERATION_TIMEOUT", "the operation timed out", { cause: error });
+  }
+  if (error instanceof SshCancelledError) {
+    return new SessionBoxError("OPERATION_CANCELLED", "the operation was cancelled", {
+      cause: error,
+    });
   }
   if (error instanceof SshUnavailableError) {
     return new SessionBoxError(

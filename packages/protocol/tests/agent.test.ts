@@ -8,7 +8,7 @@ import {
 } from "../src/index.ts";
 
 describe("agent handshake", () => {
-  it("speaks protocol version 1", () => {
+  it("speaks protocol version 2", () => {
     expect(AGENT_PROTOCOL_VERSION).toBe(2);
     expect(AgentHelloSchema.parse({ type: "hello", protocolVersion: 1 })).toMatchObject({
       type: "hello",
@@ -29,7 +29,14 @@ describe("agent requests", () => {
   it("accepts every required operation", () => {
     const requests = [
       { type: "exec", requestId: "r1", containerId: "ctr_1", command: "ls" },
+      {
+        type: "exec.cancel",
+        requestId: "r1b",
+        containerId: "ctr_1",
+        targetRequestId: "r1",
+      },
       { type: "file.read", requestId: "r2", containerId: "ctr_1", path: "/workspace/a.txt" },
+      { type: "file.readBytes", requestId: "r2b", containerId: "ctr_1", path: "/workspace/a.bin" },
       {
         type: "file.write",
         requestId: "r3",
@@ -72,6 +79,22 @@ describe("agent responses", () => {
         exitCode: 0,
         stdout: "ok",
         stderr: "",
+      }).success,
+    ).toBe(true);
+
+    expect(
+      AgentResponseSchema.safeParse({
+        requestId: "r1b",
+        type: "exec.cancel.result",
+        targetRequestId: "r1",
+      }).success,
+    ).toBe(true);
+
+    expect(
+      AgentResponseSchema.safeParse({
+        requestId: "r2b",
+        type: "file.readBytes.result",
+        file: { path: "/workspace/a.bin", contentBase64: "AAEC", size: 3, modifiedAt: 0 },
       }).success,
     ).toBe(true);
 

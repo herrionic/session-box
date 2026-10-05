@@ -1,7 +1,12 @@
 export interface SshExecOptions {
   cwd?: string;
   timeoutMs?: number;
+  /** Aborts the command and kills its process group. */
+  signal?: AbortSignal;
 }
+
+/** Default exec timeout; also used by the agent route as its deadline base. */
+export const DEFAULT_EXEC_TIMEOUT_MS = 30_000;
 
 export interface SshExecResult {
   exitCode: number | null;
@@ -64,9 +69,16 @@ export interface SshSessionFactory {
 }
 
 export class SshError extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
+  /**
+   * Whether the underlying connection should be discarded. Connection-level
+   * failures do; clean operation outcomes (not found, cancelled) do not.
+   */
+  readonly dropsSession: boolean;
+
+  constructor(message: string, options?: { cause?: unknown; dropsSession?: boolean }) {
     super(message, options?.cause !== undefined ? { cause: options.cause } : undefined);
     this.name = "SshError";
+    this.dropsSession = options?.dropsSession ?? true;
   }
 }
 
@@ -78,7 +90,7 @@ export class SshUnavailableError extends SshError {
 }
 
 export class SshTimeoutError extends SshError {
-  constructor(message: string, options?: { cause?: unknown }) {
+  constructor(message: string, options?: { cause?: unknown; dropsSession?: boolean }) {
     super(message, options);
     this.name = "SshTimeoutError";
   }
@@ -86,7 +98,14 @@ export class SshTimeoutError extends SshError {
 
 export class SshNotFoundError extends SshError {
   constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options);
+    super(message, { ...options, dropsSession: false });
     this.name = "SshNotFoundError";
+  }
+}
+
+export class SshCancelledError extends SshError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, { ...options, dropsSession: false });
+    this.name = "SshCancelledError";
   }
 }

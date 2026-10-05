@@ -63,17 +63,24 @@ private network and is reachable by the server only.
    is rejected; there is no negotiation or fallback.
 2. Requests are validated and correlated by `requestId`; one connection
    multiplexes every operation for the bound container.
-3. Operations: `exec`, `file.read`, `file.write`, `file.list`, `file.stat`,
-   `file.mkdir`, `file.remove` — exact shapes in [`PROTOCOL.md`](PROTOCOL.md) §2.
+3. Operations: `exec`, `exec.cancel`, `file.read`, `file.readBytes`,
+   `file.write`, `file.list`, `file.stat`, `file.mkdir`, `file.remove` — exact
+   shapes in [`PROTOCOL.md`](PROTOCOL.md) §2.
 4. `exec` carries `command`, optional `cwd` and `timeoutMs`, and runs through a
    real SSH channel as the non-root `agent` user (uid 1000) inside the
-   container.
-5. The file protocol is text-only today; binary reads fail with a typed
-   `FS_IO_ERROR`.
-6. Failures use stable codes (`CONTAINER_NOT_FOUND`, `CONTAINER_NOT_RUNNING`,
-   `OPERATION_TIMEOUT`, `SSH_UNAVAILABLE`, `INVALID_REQUEST`, `RUNTIME_ERROR`,
-   …). Reconnect and retry on transport errors; treat `CONTAINER_NOT_FOUND` as
-   terminal.
+   container. `exec.cancel` targets an in-flight exec by `requestId` and kills
+   its whole process group; the target then fails with `OPERATION_CANCELLED`.
+5. Files: `file.read` is text-only and fails with `FS_NOT_TEXT` when the
+   content is not valid UTF-8 or contains NUL bytes; `file.readBytes` returns
+   base64 for binary content. Paths are absolute container paths — nothing is
+   confined to the workspace, because the container is the isolation boundary.
+6. Every request receives exactly one result or error frame, even under
+   concurrency; requests that exceed their deadline fail with
+   `OPERATION_TIMEOUT`.
+7. Failures use stable codes (`CONTAINER_NOT_FOUND`, `CONTAINER_NOT_RUNNING`,
+   `OPERATION_TIMEOUT`, `OPERATION_CANCELLED`, `SSH_UNAVAILABLE`,
+   `INVALID_REQUEST`, `FS_NOT_TEXT`, `RUNTIME_ERROR`, …). Reconnect and retry
+   on transport errors; treat `CONTAINER_NOT_FOUND` as terminal.
 
 ## 4. Session → container binding
 
@@ -111,7 +118,8 @@ Back the host's filesystem and shell seams with SessionBox implementations:
   filesystem semantics; replacing the seams there can break unrelated services.
   Prefer headless or custom compositions whose consumers honor provider paths.
 - Path mapping: the session's host working directory maps to the container
-  workspace (`/workspace`); paths outside fail closed.
+  workspace (`/workspace`); other container paths pass through unchanged, since
+  the container itself is the isolation boundary.
 
 ### 5.2 Expose container-backed tools (hosts that cannot replace seams)
 
@@ -121,7 +129,8 @@ product decision, not the default.
 
 ## 6. Lifecycle and ownership
 
-- A client disconnect never stops or deletes a container (PROJECT.md §39).
+- A client disconnect never stops or deletes a container (PROJECT.md §39); it
+  does cancel execs that were in flight on that connection.
 - Open agent or terminal connections count as activity; idle auto-stop only
   applies while no connection is active.
 - `deleteAfterStop` removes the container; otherwise it stays `stopped` and can

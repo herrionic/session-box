@@ -12,9 +12,14 @@ import type { AgentGateway } from "../../agent/gateway.ts";
 import { PERMISSIONS, requirePermission } from "../../auth/principals.ts";
 import { isSessionBoxError } from "../../errors.ts";
 import type { ContainerService } from "../../container/service.ts";
+import { DEFAULT_EXEC_TIMEOUT_MS } from "../../ssh/session.ts";
 import type { SessionBoxApp } from "../types.ts";
 
 const HANDSHAKE_TIMEOUT_MS = 10_000;
+/** Grace on top of the exec timeout before the route gives up on a request. */
+const EXEC_DEADLINE_GRACE_MS = 2_000;
+/** Last-resort deadline for file operations (SFTP round trips have their own bound). */
+const FILE_REQUEST_DEADLINE_MS = 60_000;
 
 type AgentServerMessage = AgentResponse | { type: "welcome"; protocolVersion: number };
 
@@ -38,6 +43,8 @@ function handleAgent(
   deps: { gateway: AgentGateway; service: ContainerService },
 ): void {
   const trackedContainers = new Set<string>();
+  /** In-flight execs on this connection, addressable by `exec.cancel`. */
+  const inflightExecs = new Map<string, { controller: AbortController; containerId: string }>();
   const gateway = deps.gateway;
   const service = deps.service;
   const send = (message: AgentServerMessage): void => {
@@ -52,6 +59,32 @@ function handleAgent(
       code,
       message,
       ...(requestId !== undefined ? { requestId } : {}),
+    });
+  };
+
+  const handleCancel = (cancel: Extract<AgentRequest, { type: "exec.cancel" }>): void => {
+    try {
+      requirePermission(request.principal, PERMISSIONS.execute);
+    } catch (error) {
+      if (isSessionBoxError(error)) {
+        fail(error.code, error.message, cancel.requestId);
+      } else {
+        fail("INTERNAL_ERROR", "internal server error", cancel.requestId);
+      }
+      return;
+    }
+
+    const target = inflightExecs.get(cancel.targetRequestId);
+    if (target === undefined || target.containerId !== cancel.containerId) {
+      fail("INVALID_REQUEST", "no in-flight exec matches this requestId", cancel.requestId);
+      return;
+    }
+
+    target.controller.abort();
+    send({
+      type: "exec.cancel.result",
+      requestId: cancel.requestId,
+      targetRequestId: cancel.targetRequestId,
     });
   };
 
@@ -106,8 +139,45 @@ function handleAgent(
       }
 
       const agentRequest = parsedRequest.data;
+      if (agentRequest.type === "exec.cancel") {
+        handleCancel(agentRequest);
+        return;
+      }
+
+      // Exactly one terminal response per request: whichever of the operation,
+      // its failure or the deadline settles first wins.
+      let settled = false;
+      const controller = new AbortController();
+      const deadlineMs =
+        agentRequest.type === "exec"
+          ? (agentRequest.timeoutMs ?? DEFAULT_EXEC_TIMEOUT_MS) + EXEC_DEADLINE_GRACE_MS
+          : FILE_REQUEST_DEADLINE_MS;
+
+      const finish = (respond: () => void): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(deadline);
+        respond();
+      };
+
+      const deadline = setTimeout(() => {
+        // Stop whatever is still running (exec: kill the process group), then
+        // answer exactly once.
+        controller.abort();
+        finish(() =>
+          fail("OPERATION_TIMEOUT", "the operation timed out", agentRequest.requestId),
+        );
+      }, deadlineMs);
+
       try {
         requirePermission(request.principal, permissionFor(agentRequest.type));
+
+        if (agentRequest.type === "exec") {
+          inflightExecs.set(agentRequest.requestId, {
+            controller,
+            containerId: agentRequest.containerId,
+          });
+        }
 
         if (!trackedContainers.has(agentRequest.containerId)) {
           trackedContainers.add(agentRequest.containerId);
@@ -115,10 +185,11 @@ function handleAgent(
         }
         await service.touch(agentRequest.containerId);
 
-        send(await gateway.handle(agentRequest));
+        const response = await gateway.handle(agentRequest, { signal: controller.signal });
+        finish(() => send(response));
       } catch (error) {
         if (isSessionBoxError(error)) {
-          fail(error.code, error.message, agentRequest.requestId);
+          finish(() => fail(error.code, error.message, agentRequest.requestId));
           return;
         }
         request.log.error(
@@ -130,7 +201,10 @@ function handleAgent(
           },
           "agent request failed",
         );
-        fail("INTERNAL_ERROR", "internal server error", agentRequest.requestId);
+        finish(() => fail("INTERNAL_ERROR", "internal server error", agentRequest.requestId));
+      } finally {
+        if (agentRequest.type === "exec") inflightExecs.delete(agentRequest.requestId);
+        clearTimeout(deadline);
       }
     })();
   });
@@ -140,6 +214,11 @@ function handleAgent(
   };
   socket.on("close", () => {
     cleanup();
+    // A disconnect ends access: stop whatever this connection was running.
+    for (const { controller } of inflightExecs.values()) {
+      controller.abort();
+    }
+    inflightExecs.clear();
     for (const containerId of trackedContainers) {
       void service.release(containerId);
     }
@@ -149,7 +228,7 @@ function handleAgent(
 }
 
 function permissionFor(type: AgentRequest["type"]): string {
-  if (type === "exec") return PERMISSIONS.execute;
+  if (type === "exec" || type === "exec.cancel") return PERMISSIONS.execute;
   if (type === "file.write" || type === "file.mkdir" || type === "file.remove") {
     return PERMISSIONS.write;
   }

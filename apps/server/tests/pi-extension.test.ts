@@ -111,7 +111,6 @@ async function createFixture(): Promise<Fixture> {
   });
   const files = new ContainerFilesService({
     containers: service,
-    workspace: testConfig.docker.workspace,
     logger,
   });
   const gateway = new AgentGateway(service, logger);

@@ -22,7 +22,7 @@ export { SqliteContainerRepository } from "./storage/container-repository.ts";
 export { InMemorySecretRepository, SqliteSecretRepository, type SecretRepository } from "./storage/secret-repository.ts";
 export { generateSshKeyPair, SSH_PRIVATE_KEY_CREDENTIAL } from "./ssh/keypair.ts";
 export { SshSessionManager } from "./ssh/manager.ts";
-export { isWithinWorkspace, normalizeContainerPath, resolveWithinWorkspace } from "./ssh/paths.ts";
+export { normalizeContainerPath } from "./ssh/paths.ts";
 export { waitForSsh } from "./ssh/readiness.ts";
 export {
   SshError,

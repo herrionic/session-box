@@ -57,7 +57,6 @@ describe("network resource", () => {
     });
     const files = new ContainerFilesService({
       containers: service,
-      workspace: testConfig.docker.workspace,
       logger,
     });
     const networks = new NetworkService({

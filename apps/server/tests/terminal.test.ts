@@ -55,7 +55,6 @@ async function createFixture(options: { authClients?: string } = {}): Promise<{
   });
   const files = new ContainerFilesService({
     containers: service,
-    workspace: testConfig.docker.workspace,
     logger,
   });
 

@@ -57,7 +57,6 @@ async function createFixture(): Promise<Fixture> {
   });
   const files = new ContainerFilesService({
     containers: service,
-    workspace: testConfig.docker.workspace,
     logger,
   });
   const gateway = new AgentGateway(service, logger);
@@ -110,6 +109,15 @@ function rawConnect(url: string): Promise<RawClient> {
   });
 }
 
+/** Polls until the predicate holds (fake sessions settle on later ticks). */
+async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error("condition was not met in time");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 describe("agent protocol (simulated harness sessions)", () => {
   const cleanups: Array<() => Promise<void>> = [];
 
@@ -147,7 +155,7 @@ describe("agent protocol (simulated harness sessions)", () => {
     await runtimeA.close();
     await runtimeB.close();
 
-    // A disconnect is temporary access ending, not container ownership (PROJECT §39).
+    // A disconnect is temporary access ending, not container ownership (PROJECT 搂39).
     expect((await client.getContainer(sessionA.id)).status).toBe("running");
     expect((await client.getContainer(sessionB.id)).status).toBe("running");
   });
@@ -258,5 +266,143 @@ describe("agent protocol (simulated harness sessions)", () => {
     raw.socket.send(JSON.stringify({ type: "exec", requestId: "r1", containerId: "ctr_x" }));
     const malformed = await raw.next();
     expect(malformed).toMatchObject({ type: "error", code: "INVALID_REQUEST", requestId: "r1" });
+  });
+
+  it("rejects binary content in file.read and serves it via file.readBytes", async () => {
+    const { app, client, ssh } = await createFixture();
+    cleanups.push(() => app.close());
+
+    const container = await client.createContainer({});
+    const runtime = await client.connect(container.id);
+    const bytes = Buffer.from([0x00, 0xff, 0xfe, 0x01, 0x80]);
+    ssh.sessionFor(container.id).ensureFile("/workspace/blob.bin", bytes);
+
+    await expect(runtime.readFile("/workspace/blob.bin")).rejects.toMatchObject({
+      code: "FS_NOT_TEXT",
+    });
+
+    const file = await runtime.readBytes("/workspace/blob.bin");
+    expect(Buffer.from(file.contentBase64, "base64").equals(bytes)).toBe(true);
+    expect(file.size).toBe(bytes.length);
+
+    await runtime.close();
+  });
+
+  it("cancels an in-flight exec and answers both requests", async () => {
+    const { app, client, ssh } = await createFixture();
+    cleanups.push(() => app.close());
+
+    const container = await client.createContainer({});
+    const runtime = await client.connect(container.id);
+    const fake = ssh.sessionFor(container.id);
+    fake.holdExecs = true;
+
+    const controller = new AbortController();
+    const pending = runtime.exec("sleep 999", { signal: controller.signal });
+    await waitFor(() => fake.pendingExecs.length === 1);
+
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ code: "OPERATION_CANCELLED" });
+    expect(fake.pendingExecs[0]?.options?.signal?.aborted).toBe(true);
+
+    await runtime.close();
+  });
+
+  it("rejects exec.cancel for unknown or finished requests", async () => {
+    const { app, client, port } = await createFixture();
+    cleanups.push(() => app.close());
+
+    const container = await client.createContainer({});
+    const raw = await rawConnect(`ws://127.0.0.1:${port}/api/ws/agent`);
+    cleanups.push(async () => {
+      raw.socket.close();
+    });
+
+    raw.socket.send(JSON.stringify({ type: "hello", protocolVersion: 2 }));
+    expect(await raw.next()).toMatchObject({ type: "welcome" });
+
+    raw.socket.send(
+      JSON.stringify({
+        type: "exec.cancel",
+        requestId: "c1",
+        containerId: container.id,
+        targetRequestId: "missing",
+      }),
+    );
+    expect(await raw.next()).toMatchObject({
+      type: "error",
+      code: "INVALID_REQUEST",
+      requestId: "c1",
+    });
+
+    raw.socket.send(
+      JSON.stringify({ type: "exec", requestId: "e1", containerId: container.id, command: "true" }),
+    );
+    expect(await raw.next()).toMatchObject({ type: "exec.result", requestId: "e1" });
+
+    raw.socket.send(
+      JSON.stringify({
+        type: "exec.cancel",
+        requestId: "c2",
+        containerId: container.id,
+        targetRequestId: "e1",
+      }),
+    );
+    expect(await raw.next()).toMatchObject({
+      type: "error",
+      code: "INVALID_REQUEST",
+      requestId: "c2",
+    });
+  });
+
+  it("answers every concurrent request exactly once", async () => {
+    const { app, client, port } = await createFixture();
+    cleanups.push(() => app.close());
+
+    const container = await client.createContainer({});
+    const raw = await rawConnect(`ws://127.0.0.1:${port}/api/ws/agent`);
+    cleanups.push(async () => {
+      raw.socket.close();
+    });
+
+    raw.socket.send(JSON.stringify({ type: "hello", protocolVersion: 2 }));
+    expect(await raw.next()).toMatchObject({ type: "welcome" });
+
+    const total = 200;
+    for (let index = 0; index < total; index += 1) {
+      raw.socket.send(
+        JSON.stringify({
+          type: "file.stat",
+          requestId: `r${index}`,
+          containerId: container.id,
+          path: "/workspace",
+        }),
+      );
+    }
+
+    const answered = new Set<string>();
+    for (let index = 0; index < total; index += 1) {
+      const message = await raw.next();
+      expect(message.type).toBe("file.stat.result");
+      answered.add(String(message.requestId));
+    }
+    expect(answered.size).toBe(total);
+  });
+
+  it("answers OPERATION_TIMEOUT when an exec exceeds its deadline", async () => {
+    const { app, client, ssh } = await createFixture();
+    cleanups.push(() => app.close());
+
+    const container = await client.createContainer({});
+    const runtime = await client.connect(container.id);
+    const fake = ssh.sessionFor(container.id);
+    fake.holdExecs = true;
+
+    await expect(runtime.exec("sleep 999", { timeoutMs: 50 })).rejects.toMatchObject({
+      code: "OPERATION_TIMEOUT",
+    });
+    expect(fake.pendingExecs[0]?.options?.signal?.aborted).toBe(true);
+
+    await runtime.close();
   });
 });

@@ -14,6 +14,8 @@ export const ErrorCodeSchema = z.enum([
   "INVALID_REQUEST",
   "INVALID_STATE",
   "OPERATION_TIMEOUT",
+  "OPERATION_CANCELLED",
+  "FS_NOT_TEXT",
   "RUNTIME_ERROR",
   "INTERNAL_ERROR",
   "NOT_FOUND",

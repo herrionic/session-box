@@ -17,25 +17,3 @@ export function normalizeContainerPath(input: string): string {
 
   return posix.normalize(input).replace(/\/{2,}/g, "/");
 }
-
-export function isWithinWorkspace(root: string, path: string): boolean {
-  const normalizedRoot = normalizeContainerPath(root);
-  const normalizedPath = normalizeContainerPath(path);
-
-  if (normalizedPath === normalizedRoot) return true;
-  const rootPrefix = normalizedRoot === "/" ? "/" : `${normalizedRoot}/`;
-  return normalizedPath.startsWith(rootPrefix);
-}
-
-/**
- * Resolves a path that must stay inside the workspace root (default `/workspace`
- * for the file manager). Traversal attempts such as
- * `/workspace/../../etc/passwd` normalize to `/etc/passwd` and are rejected.
- */
-export function resolveWithinWorkspace(input: string, root: string): string {
-  const path = normalizeContainerPath(input);
-  if (!isWithinWorkspace(root, path)) {
-    throw invalid(`path must stay within ${root}`);
-  }
-  return path;
-}

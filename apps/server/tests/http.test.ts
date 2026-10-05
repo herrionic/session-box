@@ -56,7 +56,6 @@ describe("HTTP API", () => {
     });
     files = new ContainerFilesService({
       containers: service,
-      workspace: testConfig.docker.workspace,
       logger,
     });
     app = await buildApp({
@@ -230,7 +229,6 @@ describe("HTTP API with static web assets", () => {
       service,
       files: new ContainerFilesService({
         containers: service,
-        workspace: testConfig.docker.workspace,
         logger,
       }),
       gateway: new AgentGateway(service, logger),

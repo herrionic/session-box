@@ -32,11 +32,12 @@ const testConfig: ServerConfig = {
 describe("file manager HTTP API", () => {
   let app: SessionBoxApp;
   let containerId: string;
+  let ssh: FakeSshSessionFactory;
 
   beforeEach(async () => {
     const runtime = new FakeRuntime();
     const logger = createTestLogger();
-    const ssh = new FakeSshSessionFactory();
+    ssh = new FakeSshSessionFactory();
     const service = new ContainerService({
       runtime,
       repository: new InMemoryContainerRepository(),
@@ -52,7 +53,6 @@ describe("file manager HTTP API", () => {
     });
     const files = new ContainerFilesService({
       containers: service,
-      workspace: testConfig.docker.workspace,
       logger,
     });
 
@@ -134,14 +134,43 @@ describe("file manager HTTP API", () => {
     expect(after.json().entries).toEqual([]);
   });
 
-  it("rejects traversal attempts", async () => {
-    const response = await app.inject({
+  it("serves paths outside the workspace and normalizes traversal", async () => {
+    ssh.session.ensureDirectory("/etc");
+    ssh.session.ensureFile("/etc/hostname", "box\n");
+
+    const outside = await app.inject({
       method: "GET",
       url: `/api/containers/${containerId}/files?path=/etc`,
     });
+    expect(outside.statusCode).toBe(200);
+    expect(outside.json().entries.map((entry: { name: string }) => entry.name)).toEqual([
+      "hostname",
+    ]);
 
+    const normalized = await app.inject({
+      method: "GET",
+      url: `/api/containers/${containerId}/files/content?path=/workspace/../../etc/hostname`,
+    });
+    expect(normalized.statusCode).toBe(200);
+    expect(normalized.json().content).toBe("box\n");
+  });
+
+  it("rejects binary content in the text viewer", async () => {
+    ssh.session.ensureFile("/workspace/blob.bin", Buffer.from([0xff, 0x00, 0xfe]));
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/containers/${containerId}/files/content?path=/workspace/blob.bin`,
+    });
     expect(response.statusCode).toBe(400);
-    expect(response.json().error.code).toBe("INVALID_REQUEST");
+    expect(response.json().error.code).toBe("FS_NOT_TEXT");
+
+    const download = await app.inject({
+      method: "GET",
+      url: `/api/containers/${containerId}/files/download?path=/workspace/blob.bin`,
+    });
+    expect(download.statusCode).toBe(200);
+    expect([...download.rawPayload]).toEqual([0xff, 0x00, 0xfe]);
   });
 
   it("rejects uploads without an octet-stream body", async () => {

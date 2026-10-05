@@ -29,9 +29,11 @@ Harness plugins never see SSH, Docker, container IPs or credentials. They use
 | POST | `/api/containers/:id/files/upload` | raw `application/octet-stream` body |
 | GET | `/api/containers/:id/files/download` | raw bytes |
 
-File-manager paths are **confined to the workspace root** (`/workspace` by
-default); traversal attempts are rejected before any SSH call. Text editing is
-limited to 1 MiB, uploads/downloads to 16 MiB.
+File-manager paths are absolute container paths; nothing is confined to the
+workspace — the container is the isolation boundary, so the manager can browse
+the whole filesystem. Text editing is limited to 1 MiB, uploads/downloads to
+16 MiB. Reading a non-UTF-8 (or NUL-containing) file as text fails with
+`FS_NOT_TEXT`; use download for binary content.
 
 Errors always use the stable envelope:
 
@@ -60,7 +62,9 @@ Every request carries `requestId` (client-chosen, echoed back) and
 
 ```jsonc
 { "type": "exec",        "requestId": "r1", "containerId": "ctr_...", "command": "ls", "cwd": "/workspace", "timeoutMs": 30000 }
+{ "type": "exec.cancel", "requestId": "r1c", "containerId": "ctr_...", "targetRequestId": "r1" }
 { "type": "file.read",   "requestId": "r2", "containerId": "ctr_...", "path": "/workspace/a.txt" }
+{ "type": "file.readBytes", "requestId": "r2b", "containerId": "ctr_...", "path": "/workspace/a.bin" }
 { "type": "file.write",  "requestId": "r3", "containerId": "ctr_...", "path": "/workspace/a.txt", "content": "hi" }
 { "type": "file.list",   "requestId": "r4", "containerId": "ctr_...", "path": "/workspace" }
 { "type": "file.stat",   "requestId": "r5", "containerId": "ctr_...", "path": "/workspace/a.txt" }
@@ -75,7 +79,9 @@ read/write/stat, preserving their native semantics.
 
 ```jsonc
 { "type": "exec.result",       "requestId": "r1", "exitCode": 0, "stdout": "...", "stderr": "" }
+{ "type": "exec.cancel.result","requestId": "r1c", "targetRequestId": "r1" }
 { "type": "file.read.result",  "requestId": "r2", "file": { "path": "...", "content": "...", "size": 2, "modifiedAt": 0 } }
+{ "type": "file.readBytes.result", "requestId": "r2b", "file": { "path": "...", "contentBase64": "AAEC", "size": 3, "modifiedAt": 0 } }
 { "type": "file.write.result", "requestId": "r3", "file": { "path": "...", "size": 2, "modifiedAt": 0 } }
 { "type": "file.list.result",  "requestId": "r4", "path": "/workspace", "entries": [ /* FileEntry */ ] }
 { "type": "file.stat.result",  "requestId": "r5", "entry": { /* FileEntry */ } }
@@ -89,9 +95,22 @@ read/write/stat, preserving their native semantics.
 - **Paths**: agent paths must be absolute and are not confined to the
   workspace — the SSH user's permissions are the boundary. Relative paths and
   NUL bytes are rejected (`INVALID_REQUEST`).
+- **Binary safety**: `file.read` returns text only; a file that is not valid
+  UTF-8 or contains NUL bytes fails with `FS_NOT_TEXT` (never silently
+  mangled). `file.readBytes` returns base64 for binary content.
+- **Cancellation**: `exec.cancel` targets the `requestId` of an in-flight
+  `exec` on the same connection, kills the command's whole process group and
+  answers the target with `OPERATION_CANCELLED`. Unknown or finished targets
+  are `INVALID_REQUEST`. The cancel message itself is answered by
+  `exec.cancel.result`.
+- **Exactly one terminal response**: every request receives exactly one
+  result or error frame, even under concurrency. A request that exceeds its
+  deadline (`timeoutMs` for exec, 60 s for file operations) is answered with
+  `OPERATION_TIMEOUT`.
 - **Connection lifetime ≠ container lifetime**: closing the socket only ends
   temporary access; it never stops or deletes a container (PROJECT.md §39).
   Reconnecting with the same `containerId` returns to the same `/workspace`.
+  In-flight execs are cancelled when the connection closes.
 - **Limits**: 8 MiB per file payload, 64 KiB per command, 10 min per exec.
 - **Errors**: stable codes only; details stay in the server log.
 
@@ -112,5 +131,5 @@ Browser-only. `?cols=&rows=` sets the initial PTY size.
 
 ## 4. Versioning
 
-`AGENT_PROTOCOL_VERSION = 1`. The server rejects other versions during the
+`AGENT_PROTOCOL_VERSION = 2`. The server rejects other versions during the
 handshake; no negotiation beyond that is planned for the MVP.

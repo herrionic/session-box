@@ -1,8 +1,10 @@
 import { posix } from "node:path";
 import {
+  SshCancelledError,
   SshError,
   SshNotFoundError,
   SshUnavailableError,
+  type SshExecOptions,
   type SshExecResult,
   type SshFileEntry,
   type SshSession,
@@ -26,6 +28,13 @@ export interface FakeShell {
   closed: boolean;
   emit(data: string): void;
   exit(code: number | null): void;
+}
+
+export interface PendingExec {
+  command: string;
+  options: SshExecOptions | undefined;
+  resolve(result: SshExecResult): void;
+  reject(error: Error): void;
 }
 
 /** Scriptable SSH session factory for service/file/probe tests (no sshd). */
@@ -76,6 +85,10 @@ export class FakeSshSession implements SshSession {
   readonly commands: string[] = [];
   readonly nodes = new Map<string, FakeNode>();
   readonly shells: FakeShell[] = [];
+  /** In-flight execs while `holdExecs` is set (cancellation tests). */
+  readonly pendingExecs: PendingExec[] = [];
+  /** When true, exec calls are held until the test resolves or aborts them. */
+  holdExecs = false;
   execResults: SshExecResult[] = [];
   closed = false;
 
@@ -98,9 +111,20 @@ export class FakeSshSession implements SshSession {
     this.nodes.set(target, { type: "file", content: Buffer.from(content), mode: 0o644, modifiedAt: Date.now() });
   }
 
-  async exec(command: string): Promise<SshExecResult> {
+  async exec(command: string, options: SshExecOptions = {}): Promise<SshExecResult> {
     this.commands.push(command);
-    return this.execResults.shift() ?? { exitCode: 0, stdout: "", stderr: "" };
+    if (!this.holdExecs) {
+      return this.execResults.shift() ?? { exitCode: 0, stdout: "", stderr: "" };
+    }
+
+    return await new Promise<SshExecResult>((resolve, reject) => {
+      this.pendingExecs.push({ command, options, resolve, reject });
+      options.signal?.addEventListener(
+        "abort",
+        () => reject(new SshCancelledError("command was cancelled")),
+        { once: true },
+      );
+    });
   }
 
   async readFile(path: string): Promise<Buffer> {

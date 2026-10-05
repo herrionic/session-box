@@ -49,7 +49,9 @@ export class SshSessionManager {
     try {
       return await operation(session);
     } catch (error) {
-      if (error instanceof SshError) {
+      // Only connection-level failures discard the cached session; clean
+      // outcomes such as NOT_FOUND or a cancelled command keep it alive.
+      if (error instanceof SshError && error.dropsSession) {
         await this.release(request.containerId);
       }
       throw error;

@@ -67,7 +67,6 @@ async function main(): Promise<void> {
   });
   const files = new ContainerFilesService({
     containers: service,
-    workspace: config.docker.workspace,
     logger,
   });
   const gateway = new AgentGateway(service, logger);

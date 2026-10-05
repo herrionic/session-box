@@ -29,7 +29,6 @@ async function createFixture() {
   });
   const files = new ContainerFilesService({
     containers: service,
-    workspace: "/workspace",
     logger,
   });
 
@@ -79,23 +78,34 @@ describe("ContainerFilesService", () => {
     expect(deep.entries.map((entry) => entry.name)).toEqual(["c.txt"]);
   });
 
-  it("rejects paths outside the workspace before touching SSH", async () => {
+  it("serves paths outside the workspace (the container is the boundary)", async () => {
     const { files, container, ssh } = await createFixture();
-    const commandsBefore = ssh.commands.length;
+    ssh.ensureDirectory("/etc");
+    ssh.ensureFile("/etc/hostname", "box\n");
 
-    await expect(files.list(container.id, "/etc")).rejects.toMatchObject({
-      code: "INVALID_REQUEST",
-    });
-    await expect(
-      files.readText(container.id, "/workspace/../../etc/passwd"),
-    ).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    const listing = await files.list(container.id, "/etc");
+    expect(listing.entries.map((entry) => entry.name)).toEqual(["hostname"]);
 
-    expect(ssh.commands).toHaveLength(commandsBefore);
+    // Traversal segments are normalized, not rejected: they resolve to a real path.
+    const read = await files.readText(container.id, "/workspace/../../etc/hostname");
+    expect(read.content).toBe("box\n");
   });
 
-  it("refuses to delete the workspace root", async () => {
+  it("rejects binary content in readText but serves it via download", async () => {
+    const { files, container, ssh } = await createFixture();
+    ssh.ensureFile("/workspace/blob.bin", Buffer.from([0xff, 0x00, 0xfe]));
+
+    await expect(files.readText(container.id, "/workspace/blob.bin")).rejects.toMatchObject({
+      code: "FS_NOT_TEXT",
+    });
+
+    const { content } = await files.download(container.id, "/workspace/blob.bin");
+    expect([...content]).toEqual([0xff, 0x00, 0xfe]);
+  });
+
+  it("refuses to delete the container root", async () => {
     const { files, container } = await createFixture();
-    await expect(files.remove(container.id, "/workspace")).rejects.toMatchObject({
+    await expect(files.remove(container.id, "/")).rejects.toMatchObject({
       code: "INVALID_REQUEST",
     });
   });

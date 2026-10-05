@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { ErrorCodeSchema } from "./errors.ts";
-import { FileContentSchema, FileEntrySchema, FileMetadataSchema } from "./files.ts";
+import {
+  FileBytesSchema,
+  FileContentSchema,
+  FileEntrySchema,
+  FileMetadataSchema,
+} from "./files.ts";
 
 /** MVP protocol version (PROJECT.md §40). */
 export const AGENT_PROTOCOL_VERSION = 2;
@@ -41,7 +46,14 @@ export const AgentRequestSchema = z.discriminatedUnion("type", [
     cwd: pathSchema.optional(),
     timeoutMs: z.number().int().positive().max(10 * 60_000).optional(),
   }),
+  z.strictObject({
+    ...requestBase,
+    type: z.literal("exec.cancel"),
+    /** The `requestId` of an in-flight `exec` on the same connection. */
+    targetRequestId: z.string().min(1).max(128),
+  }),
   z.strictObject({ ...requestBase, type: z.literal("file.read"), path: pathSchema }),
+  z.strictObject({ ...requestBase, type: z.literal("file.readBytes"), path: pathSchema }),
   z.strictObject({
     ...requestBase,
     type: z.literal("file.write"),
@@ -80,7 +92,17 @@ export const AgentResponseSchema = z.discriminatedUnion("type", [
     stdout: z.string(),
     stderr: z.string(),
   }),
+  z.strictObject({
+    ...responseBase,
+    type: z.literal("exec.cancel.result"),
+    targetRequestId: z.string().min(1).max(128),
+  }),
   z.strictObject({ ...responseBase, type: z.literal("file.read.result"), file: FileContentSchema }),
+  z.strictObject({
+    ...responseBase,
+    type: z.literal("file.readBytes.result"),
+    file: FileBytesSchema,
+  }),
   z.strictObject({
     ...responseBase,
     type: z.literal("file.write.result"),

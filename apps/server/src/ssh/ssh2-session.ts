@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { posix } from "node:path";
 import { Client, type ClientChannel, type SFTPWrapper, type Stats } from "ssh2";
 import type { CredentialStore } from "../credentials/store.ts";
@@ -5,6 +6,8 @@ import type { Logger } from "../logging.ts";
 import type { ContainerRuntime } from "../runtime/types.ts";
 import { SSH_PRIVATE_KEY_CREDENTIAL } from "./keypair.ts";
 import {
+  DEFAULT_EXEC_TIMEOUT_MS,
+  SshCancelledError,
   SshError,
   SshNotFoundError,
   SshTimeoutError,
@@ -32,8 +35,9 @@ export interface Ssh2SessionFactoryOptions {
 const DEFAULT_SSH_PORT = 22;
 const DEFAULT_SSH_USERNAME = "agent";
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
-const DEFAULT_EXEC_TIMEOUT_MS = 30_000;
 const DEFAULT_TERM = "xterm-256color";
+/** Bounds a single SFTP/channel round trip so a dead connection fails instead of hanging. */
+const OPERATION_TIMEOUT_MS = 30_000;
 
 /**
  * SSH/SFTP implementation over ssh2. The TCP transport always comes from
@@ -120,25 +124,96 @@ class Ssh2Session implements SshSession {
 
   exec(command: string, options: SshExecOptions = {}): Promise<SshExecResult> {
     const timeoutMs = options.timeoutMs ?? DEFAULT_EXEC_TIMEOUT_MS;
-    const fullCommand =
+    const inner =
       options.cwd !== undefined ? `cd -- ${shellQuote(options.cwd)} && ${command}` : command;
+    const pidFile = `/tmp/.sessionbox-exec-${randomBytes(12).toString("hex")}.pid`;
+    // Run the command in its own session (process group) and record the group
+    // leader's pid, so cancellation and timeouts can kill the whole tree —
+    // background children included — instead of only closing the channel.
+    const script = `echo $$ > ${shellQuote(pidFile)}; /bin/sh -c ${shellQuote(inner)}; rc=$?; rm -f ${shellQuote(pidFile)}; exit $rc`;
+    const wrapped = `setsid -w /bin/sh -c ${shellQuote(script)}`;
 
+    return this.runChannel(wrapped, {
+      timeoutMs,
+      timeoutDropsSession: false,
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
+      onAbort: (channel) => this.killProcessGroup(pidFile, channel),
+    });
+  }
+
+  /**
+   * Runs one channel to completion, buffering stdout/stderr. `onAbort` runs
+   * when the timeout fires or the signal aborts, so callers can clean up
+   * beyond the channel (e.g. kill a process group); the timeout error is only
+   * produced after that cleanup resolves.
+   */
+  private runChannel(
+    command: string,
+    options: {
+      timeoutMs: number;
+      signal?: AbortSignal;
+      /** Exec timeouts leave the connection usable; SFTP timeouts drop it. */
+      timeoutDropsSession?: boolean;
+      onAbort?: (channel: ClientChannel | undefined) => Promise<void>;
+    },
+  ): Promise<SshExecResult> {
     return new Promise<SshExecResult>((resolve, reject) => {
       let settled = false;
+      let aborting = false;
       let channel: ClientChannel | undefined;
 
-      const timer = setTimeout(() => {
+      const finish = (error?: SshError, result?: SshExecResult): void => {
         if (settled) return;
         settled = true;
-        channel?.close();
-        reject(new SshTimeoutError(`command timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
+        clearTimeout(timer);
+        options.signal?.removeEventListener("abort", onAbort);
+        if (error !== undefined) reject(error);
+        else resolve(result as SshExecResult);
+      };
 
-      this.client.exec(fullCommand, (error, stream) => {
+      const abortWith = (error: SshError): void => {
+        if (settled || aborting) return;
+        // The abort path owns the outcome: the command's death closes the
+        // channel, and that close must not settle the request as a result.
+        aborting = true;
+        if (options.onAbort === undefined) {
+          closeQuietly(channel);
+          finish(error);
+          return;
+        }
+        void options
+          .onAbort(channel)
+          .catch(() => undefined)
+          .then(() => finish(error));
+      };
+
+      const timer = setTimeout(() => {
+        abortWith(
+          new SshTimeoutError(`command timed out after ${options.timeoutMs}ms`, {
+            dropsSession: options.timeoutDropsSession ?? true,
+          }),
+        );
+      }, options.timeoutMs);
+
+      const onAbort = (): void => {
+        abortWith(new SshCancelledError("command was cancelled"));
+      };
+
+      if (options.signal !== undefined) {
+        if (options.signal.aborted) {
+          onAbort();
+          return;
+        }
+        options.signal.addEventListener("abort", onAbort, { once: true });
+      }
+
+      this.client.exec(command, (error, stream) => {
+        if (settled || aborting) {
+          closeQuietly(stream);
+          return;
+        }
         if (error) {
-          settled = true;
-          clearTimeout(timer);
-          reject(new SshError("failed to start command in the container", { cause: error }));
+          finish(new SshError("failed to start command in the container", { cause: error }));
           return;
         }
 
@@ -150,10 +225,8 @@ class Ssh2Session implements SshSession {
         stream.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
 
         stream.once("close", (code: number | null) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          resolve({
+          if (aborting) return;
+          finish(undefined, {
             exitCode: code ?? null,
             stdout: Buffer.concat(stdout).toString("utf8"),
             stderr: Buffer.concat(stderr).toString("utf8"),
@@ -161,44 +234,81 @@ class Ssh2Session implements SshSession {
         });
 
         stream.once("error", (streamError: Error) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          reject(new SshError("command stream failed", { cause: streamError }));
+          if (aborting) return;
+          finish(new SshError("command stream failed", { cause: streamError }));
         });
       });
     });
+  }
+
+  /** Runs a command for internal cleanup; no process-group wrapper. */
+  private execRaw(command: string, timeoutMs: number): Promise<SshExecResult> {
+    return this.runChannel(command, { timeoutMs });
+  }
+
+  /**
+   * Kills the command's process group: TERM is awaited (so the caller can
+   * report completion with confidence), then KILL after a grace period and
+   * pid-file removal run detached. Best effort: the session may be gone.
+   */
+  private async killProcessGroup(
+    pidFile: string,
+    channel: ClientChannel | undefined,
+  ): Promise<void> {
+    const pgid = await this.readPgid(pidFile);
+    if (pgid === undefined) {
+      // The wrapper never recorded a pid; closing the channel is all we can do.
+      closeQuietly(channel);
+      return;
+    }
+
+    try {
+      await this.execRaw(`pkill -TERM -g ${pgid} 2>/dev/null`, 5_000);
+    } catch {
+      closeQuietly(channel);
+      return;
+    }
+
+    void this.execRaw(
+      `sleep 1; pkill -KILL -g ${pgid} 2>/dev/null; rm -f ${shellQuote(pidFile)}`,
+      10_000,
+    ).catch(() => {
+      // The connection is gone; nothing left to clean up.
+    });
+    closeQuietly(channel);
+  }
+
+  /** Reads the process-group id the wrapper recorded, retrying briefly. */
+  private async readPgid(pidFile: string): Promise<number | undefined> {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        const content = await this.readFile(pidFile);
+        const pgid = Number.parseInt(content.toString("ascii").trim(), 10);
+        if (Number.isSafeInteger(pgid) && pgid > 0) return pgid;
+      } catch {
+        // Not written yet (or already removed).
+      }
+      await delay(100);
+    }
+    return undefined;
   }
 
   async readFile(path: string): Promise<Buffer> {
     const sftp = await this.sftp();
-    return await new Promise<Buffer>((resolve, reject) => {
-      sftp.readFile(path, (error, data) => {
-        if (error) reject(sftpError("read file", path, error));
-        else resolve(data);
-      });
-    });
+    return await this.sftpCall<Buffer>("read file", path, (done) => sftp.readFile(path, done));
   }
 
   async writeFile(path: string, content: Buffer | string): Promise<void> {
     const sftp = await this.sftp();
-    await new Promise<void>((resolve, reject) => {
-      sftp.writeFile(path, content, (error) => {
-        if (error) reject(sftpError("write file", path, error));
-        else resolve();
-      });
-    });
+    await this.sftpCall<void>("write file", path, (done) => sftp.writeFile(path, content, done));
   }
 
   async list(path: string): Promise<SshFileEntry[]> {
     const sftp = await this.sftp();
-    const entries = await new Promise<Array<{ filename: string; attrs: Stats }>>(
-      (resolve, reject) => {
-        sftp.readdir(path, (error, list) => {
-          if (error) reject(sftpError("list directory", path, error));
-          else resolve(list);
-        });
-      },
+    const entries = await this.sftpCall<Array<{ filename: string; attrs: Stats }>>(
+      "list directory",
+      path,
+      (done) => sftp.readdir(path, done),
     );
 
     return entries.map((entry) => {
@@ -209,13 +319,7 @@ class Ssh2Session implements SshSession {
 
   async stat(path: string): Promise<SshFileEntry> {
     const sftp = await this.sftp();
-    const stats = await new Promise<Stats>((resolve, reject) => {
-      sftp.stat(path, (error, value) => {
-        if (error) reject(sftpError("stat path", path, error));
-        else resolve(value);
-      });
-    });
-
+    const stats = await this.sftpCall<Stats>("stat path", path, (done) => sftp.stat(path, done));
     return toFileEntry(path, posix.basename(path), stats);
   }
 
@@ -264,6 +368,13 @@ class Ssh2Session implements SshSession {
 
   async openShell(options: SshShellOptions): Promise<SshShell> {
     return await new Promise<SshShell>((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new SshTimeoutError("opening a shell timed out"));
+      }, OPERATION_TIMEOUT_MS);
+
       this.client.shell(
         {
           term: options.term ?? DEFAULT_TERM,
@@ -271,6 +382,12 @@ class Ssh2Session implements SshSession {
           rows: options.rows,
         },
         (error, stream) => {
+          if (settled) {
+            closeQuietly(stream);
+            return;
+          }
+          settled = true;
+          clearTimeout(timer);
           if (error) {
             reject(new SshError("failed to open a shell in the container", { cause: error }));
             return;
@@ -297,46 +414,75 @@ class Ssh2Session implements SshSession {
     });
   }
 
-  private sftp(): Promise<SFTPWrapper> {
-    if (this.sftpPromise === undefined) {
-      this.sftpPromise = new Promise<SFTPWrapper>((resolve, reject) => {
-        this.client.sftp((error, sftp) => {
-          if (error) reject(new SshError("failed to open an SFTP channel", { cause: error }));
-          else resolve(sftp);
-        });
-      });
-    }
-    return this.sftpPromise;
-  }
-
   private async mkdirOne(path: string): Promise<void> {
     const sftp = await this.sftp();
-    await new Promise<void>((resolve, reject) => {
-      sftp.mkdir(path, (error) => {
-        if (error) reject(sftpError("create directory", path, error));
-        else resolve();
-      });
-    });
+    await this.sftpCall<void>("create directory", path, (done) => sftp.mkdir(path, done));
   }
 
   private async rmdirOne(path: string): Promise<void> {
     const sftp = await this.sftp();
-    await new Promise<void>((resolve, reject) => {
-      sftp.rmdir(path, (error) => {
-        if (error) reject(sftpError("remove directory", path, error));
-        else resolve();
-      });
-    });
+    await this.sftpCall<void>("remove directory", path, (done) => sftp.rmdir(path, done));
   }
 
   private async unlinkOne(path: string): Promise<void> {
     const sftp = await this.sftp();
-    await new Promise<void>((resolve, reject) => {
-      sftp.unlink(path, (error) => {
-        if (error) reject(sftpError("remove file", path, error));
-        else resolve();
+    await this.sftpCall<void>("remove file", path, (done) => sftp.unlink(path, done));
+  }
+
+  /**
+   * Runs one SFTP request with a deadline; a wedged connection rejects with
+   * `SshTimeoutError` (which drops the session) instead of hanging forever.
+   */
+  private sftpCall<T>(
+    action: string,
+    path: string,
+    invoke: (done: (error: Error | null | undefined, value?: T) => void) => void,
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new SshTimeoutError(`failed to ${action} (timed out): ${path}`));
+      }, OPERATION_TIMEOUT_MS);
+
+      invoke((error, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (error !== undefined && error !== null) reject(sftpError(action, path, error));
+        else resolve(value as T);
       });
     });
+  }
+
+  private sftp(): Promise<SFTPWrapper> {
+    if (this.sftpPromise === undefined) {
+      const created = new Promise<SFTPWrapper>((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          reject(new SshTimeoutError("opening an SFTP channel timed out"));
+        }, OPERATION_TIMEOUT_MS);
+
+        this.client.sftp((error, sftp) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (error) reject(new SshError("failed to open an SFTP channel", { cause: error }));
+          else resolve(sftp);
+        });
+      });
+
+      // Never cache a failed channel.
+      const guarded = created.catch((error: unknown) => {
+        if (this.sftpPromise === guarded) this.sftpPromise = undefined;
+        throw error;
+      });
+      this.sftpPromise = guarded;
+    }
+    return this.sftpPromise;
   }
 }
 
@@ -365,4 +511,16 @@ function sftpError(action: string, path: string, error: unknown): SshError {
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function closeQuietly(channel: { close(): void } | undefined): void {
+  try {
+    channel?.close();
+  } catch {
+    // The channel is already gone.
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

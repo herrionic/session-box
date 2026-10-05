@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { SshSessionManager } from "../src/ssh/manager.ts";
-import { SshError } from "../src/ssh/session.ts";
+import { SshCancelledError, SshError, SshNotFoundError } from "../src/ssh/session.ts";
 import { FakeSshSessionFactory } from "./helpers/fake-ssh.ts";
 import { createTestLogger } from "./helpers/test-logger.ts";
 
@@ -44,6 +44,25 @@ describe("SshSessionManager", () => {
     const session = await manager.withSession(request, async (value) => value);
     expect(session).toBe(factory.session);
     expect(factory.requests).toHaveLength(2);
+  });
+
+  it("keeps the session for clean failures (not found, cancelled)", async () => {
+    const factory = new FakeSshSessionFactory();
+    const manager = new SshSessionManager(factory, createTestLogger());
+
+    await expect(
+      manager.withSession(request, async () => {
+        throw new SshNotFoundError("missing");
+      }),
+    ).rejects.toBeInstanceOf(SshNotFoundError);
+    await expect(
+      manager.withSession(request, async () => {
+        throw new SshCancelledError("cancelled");
+      }),
+    ).rejects.toBeInstanceOf(SshCancelledError);
+
+    expect(factory.session.closed).toBe(false);
+    expect(factory.requests).toHaveLength(1);
   });
 
   it("release closes and forgets the session", async () => {

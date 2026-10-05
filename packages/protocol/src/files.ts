@@ -39,6 +39,16 @@ export const FileContentSchema = z.strictObject({
 
 export type FileContent = z.infer<typeof FileContentSchema>;
 
+/** Binary-safe file payload (base64); the companion of `FileContent`. */
+export const FileBytesSchema = z.strictObject({
+  path: z.string().min(1),
+  contentBase64: z.string(),
+  size: z.number().int().nonnegative(),
+  modifiedAt: z.number().int().nonnegative(),
+});
+
+export type FileBytes = z.infer<typeof FileBytesSchema>;
+
 export const WriteFileRequestSchema = z.strictObject({
   path: z.string().min(1),
   content: z.string(),

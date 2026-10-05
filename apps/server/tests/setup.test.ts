@@ -71,7 +71,6 @@ describe("first-run setup wizard", () => {
     });
     const files = new ContainerFilesService({
       containers: service,
-      workspace: testConfig.docker.workspace,
       logger,
     });
 

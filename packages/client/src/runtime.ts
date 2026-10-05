@@ -5,6 +5,7 @@ import {
   type AgentRequest,
   type AgentResponse,
   type ExecResult,
+  type FileBytes,
   type FileContent,
   type FileEntry,
   type FileListResponse,
@@ -33,10 +34,14 @@ interface PendingRequest {
   resolve: (response: AgentResponse) => void;
   reject: (error: SessionBoxClientError) => void;
   timer: ReturnType<typeof setTimeout>;
+  cleanup?: () => void;
 }
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+/** Mirrors the server-side exec default so the client waits a little longer. */
+const DEFAULT_EXEC_TIMEOUT_MS = 30_000;
+const EXEC_TIMEOUT_GRACE_MS = 5_000;
 
 /**
  * A live connection to one container through the SessionBox agent protocol.
@@ -119,14 +124,21 @@ export class ContainerRuntime {
 
   async exec(
     command: string,
-    options: { cwd?: string; timeoutMs?: number } = {},
+    options: { cwd?: string; timeoutMs?: number; signal?: AbortSignal } = {},
   ): Promise<ExecResult> {
-    const response = await this.request({
-      type: "exec",
-      command,
-      ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
-      ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
-    });
+    const response = await this.request(
+      {
+        type: "exec",
+        command,
+        ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
+        ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+      },
+      {
+        // Wait slightly longer than the server-side timeout so its answer wins.
+        timeoutMs: (options.timeoutMs ?? DEFAULT_EXEC_TIMEOUT_MS) + EXEC_TIMEOUT_GRACE_MS,
+        ...(options.signal !== undefined ? { signal: options.signal } : {}),
+      },
+    );
     if (response.type !== "exec.result") {
       throw unexpected(response.type);
     }
@@ -136,6 +148,12 @@ export class ContainerRuntime {
   async readFile(path: string): Promise<FileContent> {
     const response = await this.request({ type: "file.read", path });
     if (response.type !== "file.read.result") throw unexpected(response.type);
+    return response.file;
+  }
+
+  async readBytes(path: string): Promise<FileBytes> {
+    const response = await this.request({ type: "file.readBytes", path });
+    if (response.type !== "file.readBytes.result") throw unexpected(response.type);
     return response.file;
   }
 
@@ -182,7 +200,10 @@ export class ContainerRuntime {
     if (socket !== null) socket.close();
   }
 
-  private async request(payload: RequestPayload): Promise<AgentResponse> {
+  private async request(
+    payload: RequestPayload,
+    options: { timeoutMs?: number; signal?: AbortSignal } = {},
+  ): Promise<AgentResponse> {
     const socket = this.socket;
     if (socket === null || socket.readyState !== READY_STATE_OPEN) {
       throw new SessionBoxClientError("INVALID_STATE", "agent connection is not open");
@@ -192,25 +213,65 @@ export class ContainerRuntime {
 
     return await new Promise<AgentResponse>((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.pending.delete(requestId);
-        reject(new SessionBoxClientError("OPERATION_TIMEOUT", "agent request timed out"));
-      }, this.requestTimeoutMs);
+        const pending = this.takePending(requestId);
+        if (pending !== undefined) {
+          pending.reject(new SessionBoxClientError("OPERATION_TIMEOUT", "agent request timed out"));
+        }
+      }, options.timeoutMs ?? this.requestTimeoutMs);
 
-      this.pending.set(requestId, { resolve, reject, timer });
+      const entry: PendingRequest = { resolve, reject, timer };
+      if (options.signal !== undefined) {
+        const onAbort = (): void => this.sendCancel(requestId);
+        options.signal.addEventListener("abort", onAbort, { once: true });
+        entry.cleanup = () => options.signal?.removeEventListener("abort", onAbort);
+      }
+
+      this.pending.set(requestId, entry);
 
       try {
         socket.send(JSON.stringify({ ...payload, requestId, containerId: this.containerId }));
       } catch (error) {
-        clearTimeout(timer);
-        this.pending.delete(requestId);
-        reject(
+        const pending = this.takePending(requestId);
+        pending?.reject(
           new SessionBoxClientError(
             "SSH_UNAVAILABLE",
             `failed to send request: ${error instanceof Error ? error.message : String(error)}`,
           ),
         );
+        return;
+      }
+
+      if (options.signal?.aborted === true) {
+        this.sendCancel(requestId);
       }
     });
+  }
+
+  /** Asks the server to cancel an in-flight exec; its response settles it. */
+  private sendCancel(targetRequestId: string): void {
+    const socket = this.socket;
+    if (socket === null || socket.readyState !== READY_STATE_OPEN) return;
+    try {
+      socket.send(
+        JSON.stringify({
+          type: "exec.cancel",
+          requestId: newRequestId(),
+          containerId: this.containerId,
+          targetRequestId,
+        }),
+      );
+    } catch {
+      // The connection is gone; the pending request fails on close.
+    }
+  }
+
+  private takePending(requestId: string): PendingRequest | undefined {
+    const pending = this.pending.get(requestId);
+    if (pending === undefined) return undefined;
+    this.pending.delete(requestId);
+    clearTimeout(pending.timer);
+    pending.cleanup?.();
+    return pending;
   }
 
   private onMessage(data: unknown): void {
@@ -233,11 +294,8 @@ export class ContainerRuntime {
     if (!response.success) return;
 
     const message = response.data;
-    const pending = this.pending.get(message.requestId ?? "");
+    const pending = this.takePending(message.requestId ?? "");
     if (pending === undefined) return;
-
-    this.pending.delete(message.requestId ?? "");
-    clearTimeout(pending.timer);
 
     if (message.type === "error") {
       pending.reject(new SessionBoxClientError(message.code, message.message));
@@ -257,10 +315,9 @@ export class ContainerRuntime {
   }
 
   private rejectPending(error: SessionBoxClientError): void {
-    for (const [requestId, pending] of this.pending) {
-      clearTimeout(pending.timer);
-      pending.reject(error);
-      this.pending.delete(requestId);
+    for (const requestId of [...this.pending.keys()]) {
+      const pending = this.takePending(requestId);
+      pending?.reject(error);
     }
   }
 }

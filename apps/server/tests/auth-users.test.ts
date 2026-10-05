@@ -70,7 +70,6 @@ describe("single-owner user system", () => {
     });
     const files = new ContainerFilesService({
       containers: service,
-      workspace: testConfig.docker.workspace,
       logger,
     });
 

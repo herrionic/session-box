@@ -84,7 +84,6 @@ describe("HTTP authentication", () => {
     });
     const files = new ContainerFilesService({
       containers: service,
-      workspace: testConfig.docker.workspace,
       logger,
     });
     const gateway = new AgentGateway(service, logger);
@@ -136,7 +135,7 @@ describe("HTTP authentication", () => {
       url: "/api/containers/ctr_missing/files?path=%2Fworkspace&token=dsh-token",
     });
 
-    // The container does not exist → 404; a strict-schema failure would be 400.
+    // The container does not exist 鈫?404; a strict-schema failure would be 400.
     expect(response.statusCode).toBe(404);
     expect(response.json().error.code).toBe("CONTAINER_NOT_FOUND");
   });

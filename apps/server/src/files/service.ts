@@ -1,3 +1,4 @@
+import { isUtf8 } from "node:buffer";
 import {
   FILE_LIMITS,
   type CreateFileRequest,
@@ -8,35 +9,32 @@ import {
 } from "@sessionbox/protocol";
 import { SessionBoxError } from "../errors.ts";
 import type { Logger } from "../logging.ts";
-import { normalizeContainerPath, resolveWithinWorkspace } from "../ssh/paths.ts";
+import { normalizeContainerPath } from "../ssh/paths.ts";
 import { toPublicSshError } from "../ssh/public-errors.ts";
 import type { SshSession } from "../ssh/session.ts";
 import type { ContainerService } from "../container/service.ts";
 
 export interface ContainerFilesServiceOptions {
   containers: ContainerService;
-  /** File-manager root; every path is confined to it (default `/workspace`). */
-  workspace: string;
   maxTextFileBytes?: number;
   maxUploadBytes?: number;
   logger: Logger;
 }
 
 /**
- * File-manager operations over SFTP. All paths are validated against the
- * workspace root before any SSH call; the client never supplies a raw remote
- * path (PROJECT.md §27, §42).
+ * File-manager operations over SFTP. Paths are absolute container paths: the
+ * container is the isolation boundary, so nothing is confined to the
+ * workspace (same for the agent protocol). Relative paths and NUL bytes are
+ * still rejected (PROJECT.md §27, §42).
  */
 export class ContainerFilesService {
   private readonly containers: ContainerService;
-  private readonly workspaceRoot: string;
   private readonly maxTextFileBytes: number;
   private readonly maxUploadBytes: number;
   private readonly logger: Logger;
 
   constructor(options: ContainerFilesServiceOptions) {
     this.containers = options.containers;
-    this.workspaceRoot = normalizeContainerPath(options.workspace);
     this.maxTextFileBytes = options.maxTextFileBytes ?? FILE_LIMITS.maxTextFileBytes;
     this.maxUploadBytes = options.maxUploadBytes ?? FILE_LIMITS.maxUploadBytes;
     this.logger = options.logger;
@@ -65,6 +63,12 @@ export class ContainerFilesService {
       }
 
       const content = await session.readFile(target);
+      if (!isUtf8(content) || content.includes(0)) {
+        throw new SessionBoxError(
+          "FS_NOT_TEXT",
+          "file is not valid UTF-8 text; download it instead",
+        );
+      }
       return {
         path: target,
         content: content.toString("utf8"),
@@ -110,8 +114,8 @@ export class ContainerFilesService {
 
   async remove(containerId: string, path: string, options: { recursive?: boolean } = {}): Promise<void> {
     const target = this.resolve(path);
-    if (target === this.workspaceRoot) {
-      throw new SessionBoxError("INVALID_REQUEST", "the workspace root cannot be deleted");
+    if (target === "/") {
+      throw new SessionBoxError("INVALID_REQUEST", "the container root cannot be deleted");
     }
     await this.run(containerId, (session) => session.remove(target, options));
   }
@@ -152,7 +156,7 @@ export class ContainerFilesService {
   }
 
   private resolve(path: string): string {
-    return resolveWithinWorkspace(path, this.workspaceRoot);
+    return normalizeContainerPath(path);
   }
 
   private async run<T>(
