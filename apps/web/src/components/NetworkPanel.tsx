@@ -61,9 +61,7 @@ export function NetworkPanel({
   };
 
   const attached = new Set(container.networks);
-  const attachable = (networks ?? []).filter(
-    (network) => network.managed && !attached.has(network.name),
-  );
+  const attachable = (networks ?? []).filter((network) => !attached.has(network.name));
 
   return (
     <Card title="Networks">
@@ -76,24 +74,23 @@ export function NetworkPanel({
       <ul className="mb-4 divide-y divide-slate-800/60">
         {container.networks.map((name) => {
           const meta = networks?.find((network) => network.name === name);
-          const isDefault = meta !== undefined ? !meta.managed : true;
+          // Networks missing from the shared list are private (per-container).
+          const isPrivate = meta === undefined;
           return (
             <li key={name} className="flex items-center justify-between py-2">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-sm text-slate-200">{name}</span>
-                {isDefault ? (
+                {isPrivate ? (
                   <span className="rounded-full border border-slate-700 bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
-                    default · always attached
+                    private · always attached
                   </span>
                 ) : (
-                  meta !== undefined && (
-                    <span className="text-xs text-slate-500">
-                      {meta.containers.length} container{meta.containers.length === 1 ? "" : "s"}
-                    </span>
-                  )
+                  <span className="text-xs text-slate-500">
+                    {meta.containers.length} container{meta.containers.length === 1 ? "" : "s"}
+                  </span>
                 )}
               </div>
-              {!isDefault && (
+              {!isPrivate && (
                 <Button variant="danger" disabled={busy} onClick={() => void detach(name)}>
                   Detach
                 </Button>
@@ -137,8 +134,9 @@ export function NetworkPanel({
       )}
 
       <p className="mt-4 text-xs text-slate-500">
-        Containers on the same network can reach each other by name. The default network is always
-        attached so every session stays reachable and cross-session access works out of the box.
+        Every container gets its own private network, so containers cannot reach each other by
+        default. Attach two containers to the same shared network to let them connect by name
+        across sessions.
       </p>
     </Card>
   );

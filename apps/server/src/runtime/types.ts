@@ -17,7 +17,12 @@ export interface RuntimeCreateSpec {
   workspace: string;
   resources: ContainerResources;
   env?: Record<string, string>;
-  /** Extra shared networks to attach; the default network is always attached. */
+  /**
+   * Networks to attach, in order: the first becomes the container's primary
+   * network (created on it), the rest are connected afterwards. A per-container
+   * private network is normally first, which is what keeps containers isolated
+   * from each other by default.
+   */
   networks?: string[];
 }
 
@@ -64,10 +69,14 @@ export interface ContainerRuntime {
   logs(ref: string, options?: { tailLines?: number }): Promise<string>;
 
   // ---- networks (shared connectivity between containers) -----------------
-  /** Creates a managed network; creating an existing one is a no-op. */
-  createNetwork(name: string): Promise<void>;
+  /**
+   * Creates a network; creating an existing one is a no-op. `private` marks a
+   * per-container network (hidden from the shared list, deleted with its
+   * container).
+   */
+  createNetwork(name: string, options?: { private?: boolean }): Promise<void>;
   deleteNetwork(name: string): Promise<void>;
-  /** Lists managed networks (the default network is not included). */
+  /** Lists shared networks (private and management networks are not included). */
   listNetworks(): Promise<RuntimeNetwork[]>;
   connectToNetwork(ref: string, name: string, aliases?: string[]): Promise<void>;
   disconnectFromNetwork(ref: string, name: string): Promise<void>;

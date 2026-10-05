@@ -13,6 +13,7 @@ import type {
 import { SERVER_VERSION } from "../../version.ts";
 
 const MANAGED_LABEL = "sessionbox.managed";
+const PRIVATE_NETWORK_LABEL = "sessionbox.private";
 const CONTAINER_ID_LABEL = "sessionbox.container-id";
 /** Containers created before the sandbox→container rename carry this label. */
 const LEGACY_CONTAINER_ID_LABEL = "sessionbox.sandbox-id";
@@ -62,7 +63,9 @@ export class DockerRuntime implements ContainerRuntime {
 
   constructor(options: DockerRuntimeOptions) {
     this.options = options;
-    this.docker = new Docker({ socketPath: options.socketPath });
+    // A request timeout keeps one stalled Docker call from wedging every
+    // later operation (terminal opens, lifecycle changes, reconciliation).
+    this.docker = new Docker({ socketPath: options.socketPath, timeout: 30_000 });
   }
 
   async ensureImage(image: string): Promise<void> {
@@ -105,6 +108,9 @@ export class DockerRuntime implements ContainerRuntime {
     await this.prepare();
 
     try {
+      const networks = spec.networks ?? [];
+      const primaryNetwork = networks[0] ?? this.options.networkName;
+
       const container = await this.docker.createContainer({
         name: containerNameFor(spec.containerId),
         Image: spec.image,
@@ -118,8 +124,8 @@ export class DockerRuntime implements ContainerRuntime {
         },
         HostConfig: {
           // Containers never join the default bridge and never publish ports;
-          // the server reaches them over this dedicated network only.
-          NetworkMode: this.options.networkName,
+          // the server reaches them over the container's own networks only.
+          NetworkMode: primaryNetwork,
           Privileged: false,
           CapDrop: ["ALL"],
           CapAdd: CONTAINER_CAPABILITIES,
@@ -139,7 +145,9 @@ export class DockerRuntime implements ContainerRuntime {
         },
       });
 
-      for (const networkName of spec.networks ?? []) {
+      // The server must reach every container network for SSH.
+      await this.ensureSelfAttachedTo(primaryNetwork);
+      for (const networkName of networks.slice(1)) {
         await this.connectToNetwork(container.id, networkName, [spec.name]);
       }
 
@@ -234,32 +242,38 @@ export class DockerRuntime implements ContainerRuntime {
 
   async openPortStream(ref: string, port: number): Promise<Duplex> {
     const container = await this.inspectContainerRaw(ref);
-    const network = container.NetworkSettings?.Networks?.[this.options.networkName];
-    const ip = network?.IPAddress;
-    if (!ip) {
-      throw new RuntimeError(
-        `container is not attached to the managed network "${this.options.networkName}"`,
-      );
+    const candidates = Object.values(container.NetworkSettings?.Networks ?? {})
+      .map((network) => network.IPAddress)
+      .filter((ip): ip is string => ip !== undefined && ip !== "");
+
+    if (candidates.length === 0) {
+      throw new RuntimeError("container is not attached to any network");
     }
 
-    return await new Promise<Duplex>((resolve, reject) => {
-      const socket = net.connect({ host: ip, port });
-      socket.setNoDelay(true);
-      socket.once("connect", () => resolve(socket));
-      socket.once("error", (error) => {
-        reject(new RuntimeError("failed to open a connection into the container", { cause: error }));
-      });
-    });
+    // The server is attached to every container network; try them in order
+    // (a stale network can be first after manual changes).
+    let lastError: unknown;
+    for (const ip of candidates) {
+      try {
+        return await connectTcp(ip, port);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw new RuntimeError("failed to open a connection into the container", { cause: lastError });
   }
 
   // ---- networks ----------------------------------------------------------
 
-  async createNetwork(name: string): Promise<void> {
+  async createNetwork(name: string, options: { private?: boolean } = {}): Promise<void> {
     try {
       await this.docker.createNetwork({
         Name: name,
         Driver: "bridge",
-        Labels: { [MANAGED_LABEL]: "true" },
+        Labels: {
+          [MANAGED_LABEL]: "true",
+          ...(options.private === true ? { [PRIVATE_NETWORK_LABEL]: "true" } : {}),
+        },
       });
     } catch (error) {
       if (dockerStatusCode(error) === 409) return; // already exists
@@ -268,6 +282,10 @@ export class DockerRuntime implements ContainerRuntime {
   }
 
   async deleteNetwork(name: string): Promise<void> {
+    // The server attaches itself to private networks; detach first or Docker
+    // refuses to remove a network with active endpoints.
+    await this.detachSelfFrom(name);
+
     try {
       await this.docker.getNetwork(name).remove();
     } catch (error) {
@@ -285,7 +303,11 @@ export class DockerRuntime implements ContainerRuntime {
         this.docker.listContainers({ all: true, filters: { label: [`${MANAGED_LABEL}=true`] } }),
       ]);
       return networks
-        .filter((network) => network.Name !== this.options.networkName)
+        .filter(
+          (network) =>
+            network.Name !== this.options.networkName &&
+            network.Labels?.[PRIVATE_NETWORK_LABEL] !== "true",
+        )
         .map((network) => ({
           name: network.Name,
           ...(network.Created !== undefined ? { createdAt: network.Created } : {}),
@@ -342,7 +364,7 @@ export class DockerRuntime implements ContainerRuntime {
 
   private async doPrepare(): Promise<void> {
     await this.ensureNetwork();
-    await this.ensureSelfAttached();
+    await this.ensureSelfAttachedTo(this.options.networkName);
   }
 
   private async ensureNetwork(): Promise<void> {
@@ -370,32 +392,42 @@ export class DockerRuntime implements ContainerRuntime {
     }
   }
 
-  private async ensureSelfAttached(): Promise<void> {
+  /** Detaches the server container from a network (best effort). */
+  private async detachSelfFrom(networkName: string): Promise<void> {
+    const hostname = os.hostname();
+    if (!/^[0-9a-f]{12,64}$/.test(hostname)) return;
+
+    try {
+      await this.docker.getNetwork(networkName).disconnect({ Container: hostname, Force: true });
+    } catch {
+      // Not attached, not containerised, or the network is gone: nothing to do.
+    }
+  }
+
+  private async ensureSelfAttachedTo(networkName: string): Promise<void> {
     const hostname = os.hostname();
     // Inside a container the hostname is the (short) container id.
     if (!/^[0-9a-f]{12,64}$/.test(hostname)) return;
 
     try {
       const self = await this.docker.getContainer(hostname).inspect();
-      const attached = Object.keys(self.NetworkSettings?.Networks ?? {}).includes(
-        this.options.networkName,
-      );
+      const attached = Object.keys(self.NetworkSettings?.Networks ?? {}).includes(networkName);
       if (attached) return;
 
       this.options.logger.info(
-        { event: "container.network.self_attach", network: this.options.networkName },
-        "attaching server container to managed network",
+        { event: "container.network.self_attach", network: networkName },
+        "attaching server container to a container network",
       );
-      await this.docker.getNetwork(this.options.networkName).connect({ Container: hostname });
+      await this.docker.getNetwork(networkName).connect({ Container: hostname });
     } catch (error) {
       // Running outside Docker (development) is expected to land here.
       this.options.logger.warn(
         {
           event: "container.network.self_attach_failed",
-          network: this.options.networkName,
+          network: networkName,
           err: errorMessage(error),
         },
-        "could not attach the server container to the managed network",
+        "could not attach the server container to the network",
       );
     }
   }
@@ -426,6 +458,24 @@ export class DockerRuntime implements ContainerRuntime {
 
 function containerNameFor(containerId: string): string {
   return `sessionbox-${containerId}`;
+}
+
+/** TCP connect with a short timeout so stale candidates fail fast. */
+function connectTcp(ip: string, port: number): Promise<Duplex> {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect({ host: ip, port });
+    socket.setNoDelay(true);
+    socket.setTimeout(2_000, () => {
+      socket.destroy(new Error("connection attempt timed out"));
+    });
+    socket.once("connect", () => {
+      socket.setTimeout(0);
+      resolve(socket);
+    });
+    socket.once("error", (error) => {
+      reject(error);
+    });
+  });
 }
 
 function toEnvArray(env: Record<string, string> | undefined): string[] | undefined {

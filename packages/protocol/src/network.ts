@@ -12,11 +12,6 @@ export const NetworkSchema = z.strictObject({
   createdAt: z.string().min(1).optional(),
   /** Public ids of the containers attached to this network. */
   containers: z.array(z.string()),
-  /**
-   * The default network every container joins automatically. It cannot be
-   * deleted and cannot be detached.
-   */
-  managed: z.boolean(),
 });
 
 export type Network = z.infer<typeof NetworkSchema>;

@@ -90,7 +90,6 @@ export function NetworksPage(): JSX.Element {
           <thead>
             <tr className="border-b border-slate-800 text-xs uppercase tracking-wider text-slate-500">
               <th className="py-2 pr-4 font-medium">Name</th>
-              <th className="py-2 pr-4 font-medium">Type</th>
               <th className="py-2 pr-4 font-medium">Containers</th>
               <th className="py-2 pr-4 font-medium">Created</th>
               <th className="py-2 text-right font-medium">Actions</th>
@@ -99,8 +98,15 @@ export function NetworksPage(): JSX.Element {
           <tbody>
             {networks === null && (
               <tr>
-                <td colSpan={5} className="py-6 text-center text-slate-500">
+                <td colSpan={4} className="py-6 text-center text-slate-500">
                   Loading…
+                </td>
+              </tr>
+            )}
+            {networks !== null && networks.length === 0 && (
+              <tr>
+                <td colSpan={4} className="py-6 text-center text-slate-500">
+                  No shared networks yet — create one to connect containers across sessions.
                 </td>
               </tr>
             )}
@@ -108,17 +114,6 @@ export function NetworksPage(): JSX.Element {
               <tr key={network.name} className="border-b border-slate-800/60 last:border-0">
                 <td className="py-3 pr-4 align-top">
                   <span className="font-mono text-slate-100">{network.name}</span>
-                </td>
-                <td className="py-3 pr-4 align-top">
-                  {network.managed ? (
-                    <span className="rounded-full border border-indigo-900 bg-indigo-950/50 px-2 py-0.5 text-xs text-indigo-300">
-                      shared
-                    </span>
-                  ) : (
-                    <span className="rounded-full border border-slate-700 bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
-                      default
-                    </span>
-                  )}
                 </td>
                 <td className="py-3 pr-4 align-top">
                   {network.containers.length === 0 ? (
@@ -144,13 +139,9 @@ export function NetworksPage(): JSX.Element {
                     : new Date(network.createdAt).toLocaleString()}
                 </td>
                 <td className="py-3 align-top text-right">
-                  {network.managed ? (
-                    <Button variant="danger" disabled={busy} onClick={() => void remove(network)}>
-                      Delete
-                    </Button>
-                  ) : (
-                    <span className="text-xs text-slate-500">locked</span>
-                  )}
+                  <Button variant="danger" disabled={busy} onClick={() => void remove(network)}>
+                    Delete
+                  </Button>
                 </td>
               </tr>
             ))}

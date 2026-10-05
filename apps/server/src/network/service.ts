@@ -32,7 +32,7 @@ export class NetworkService {
     this.logger = options.logger;
   }
 
-  /** The default network first, then every user-defined managed network. */
+  /** Lists the shared networks (private and management networks are hidden). */
   async list(): Promise<Network[]> {
     const [runtimeNetworks, records] = await Promise.all([
       this.runtime.listNetworks(),
@@ -45,40 +45,29 @@ export class NetworkService {
         .map((record) => [record.runtimeRef as string, record.id]),
     );
 
-    const defaultNetwork: Network = {
-      name: this.defaultNetwork,
-      containers: records
-        .filter((record) => record.networks.includes(this.defaultNetwork))
-        .map((record) => record.id),
-      managed: false,
-    };
-
-    const userNetworks: Network[] = runtimeNetworks.map((network) => ({
+    return runtimeNetworks.map((network) => ({
       name: network.name,
       ...(network.createdAt !== undefined ? { createdAt: network.createdAt } : {}),
       containers: network.containerRefs
         .map((ref) => idByRef.get(ref))
         .filter((id): id is string => id !== undefined),
-      managed: true,
     }));
-
-    return [defaultNetwork, ...userNetworks];
   }
 
   async create(name: string): Promise<Network> {
     if (name === this.defaultNetwork) {
-      throw new SessionBoxError("INVALID_REQUEST", `"${name}" is reserved for the default network`);
+      throw new SessionBoxError("INVALID_REQUEST", `"${name}" is reserved for the management network`);
     }
 
     await this.runtime.createNetwork(name);
     this.logger.info({ event: "network.created", network: name }, "network created");
-    return { name, containers: [], managed: true };
+    return { name, containers: [] };
   }
 
-  /** Deletes an empty network; attached containers must be detached first. */
+  /** Deletes an empty shared network; attached containers must be detached first. */
   async remove(name: string): Promise<void> {
     if (name === this.defaultNetwork) {
-      throw new SessionBoxError("INVALID_REQUEST", "the default network cannot be deleted");
+      throw new SessionBoxError("INVALID_REQUEST", "the management network cannot be deleted");
     }
 
     const networks = await this.runtime.listNetworks();

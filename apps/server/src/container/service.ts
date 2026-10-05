@@ -86,6 +86,7 @@ export class ContainerService {
 
   async create(request: CreateContainerRequest): Promise<ContainerRecord> {
     const id = newContainerId();
+    const privateNetwork = privateNetworkName(id);
     const extraNetworks = request.networks ?? [];
     const record: ContainerRecord = {
       id,
@@ -94,7 +95,7 @@ export class ContainerService {
       runtime: this.runtime.runtimeId,
       status: "creating",
       workspace: this.workspace,
-      networks: [this.networkName, ...extraNetworks],
+      networks: [privateNetwork, ...extraNetworks],
       resources: { ...DEFAULT_RESOURCES, ...request.resources },
       lifecycle: resolveLifecyclePolicy(request.lifecycle),
       createdAt: nowIso(this.now()),
@@ -106,6 +107,11 @@ export class ContainerService {
 
     try {
       await this.runtime.ensureImage(record.image);
+
+      // Every container gets its own private network: containers on different
+      // networks cannot reach each other. Shared networks are opt-in and are
+      // what enables cross-session connectivity.
+      await this.runtime.createNetwork(privateNetwork, { private: true });
 
       // One ephemeral SSH keypair per container: the private key stays encrypted
       // in the credential store, only the public key is injected into the
@@ -120,7 +126,7 @@ export class ContainerService {
         workspace: record.workspace,
         resources: record.resources,
         env: { SESSIONBOX_AUTHORIZED_KEY: keyPair.publicKey },
-        ...(extraNetworks.length > 0 ? { networks: extraNetworks } : {}),
+        networks: [privateNetwork, ...extraNetworks],
       });
       record.runtimeRef = created.ref;
 
@@ -141,6 +147,9 @@ export class ContainerService {
       this.logger.info({ event: "container.created", containerId: id }, "container created");
       return record;
     } catch (error) {
+      // Best effort: drop the private network when the container never made it.
+      await this.runtime.deleteNetwork(privateNetwork).catch(() => undefined);
+
       record.status = "failed";
       await this.repository.save(record);
       this.logger.error(
@@ -253,6 +262,9 @@ export class ContainerService {
         }
       }
 
+      // The private network exists only for this container; drop it best-effort.
+      await this.runtime.deleteNetwork(privateNetworkName(id)).catch(() => undefined);
+
       await this.credentials.removeAll(id);
       await this.repository.delete(id);
       this.logger.info({ event: "container.deleted", containerId: id }, "container deleted");
@@ -360,17 +372,23 @@ export class ContainerService {
       throw new SessionBoxError("INVALID_STATE", "container has no runtime handle yet");
     }
 
+    // Only shared networks can be attached; private ones belong to a container.
+    const shared = await this.runtime.listNetworks();
+    if (!shared.some((candidate) => candidate.name === network)) {
+      throw new SessionBoxError("NOT_FOUND", `network ${network} was not found`);
+    }
+
     try {
       await this.runtime.connectToNetwork(record.runtimeRef, network, [record.name]);
-    } catch (error) {
-      if (error instanceof RuntimeNotFoundError) {
-        throw new SessionBoxError("NOT_FOUND", `network ${network} was not found`);
-      }
+    } catch {
       throw new SessionBoxError("RUNTIME_ERROR", "could not attach the container to the network");
     }
 
     record.networks = [...record.networks, network];
     await this.repository.save(record);
+    // Attaching a network can disrupt existing TCP connections inside the
+    // container; drop the cached SSH session so the next operation reconnects.
+    await this.sessions.release(id);
     this.logger.info(
       { event: "container.network.attached", containerId: id, network },
       "container attached to network",
@@ -378,11 +396,11 @@ export class ContainerService {
     return record;
   }
 
-  /** Detaches a container from a shared network; the default one is locked. */
+  /** Detaches a container from a shared network; private/default are locked. */
   async detachNetwork(id: string, network: string): Promise<ContainerRecord> {
     const record = await this.require(id);
-    if (network === this.networkName) {
-      throw new SessionBoxError("INVALID_REQUEST", "the default network cannot be detached");
+    if (network === this.networkName || network === privateNetworkName(record.id)) {
+      throw new SessionBoxError("INVALID_REQUEST", "this network cannot be detached");
     }
     if (!record.networks.includes(network)) return record;
 
@@ -396,6 +414,7 @@ export class ContainerService {
 
     record.networks = record.networks.filter((name) => name !== network);
     await this.repository.save(record);
+    await this.sessions.release(id);
     this.logger.info(
       { event: "container.network.detached", containerId: id, network },
       "container detached from network",
@@ -558,6 +577,11 @@ export class ContainerService {
 
 function defaultName(id: string): string {
   return `container-${id.slice(4, 10).toLowerCase()}`;
+}
+
+/** Per-container network name; private networks are hidden from the API. */
+function privateNetworkName(id: string): string {
+  return `net-${id}`;
 }
 
 function sameStringSet(left: string[], right: string[]): boolean {

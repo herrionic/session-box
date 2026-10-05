@@ -81,10 +81,10 @@ describe("network resource", () => {
     await app.close();
   });
 
-  it("lists the default network first and creates user networks", async () => {
+  it("lists shared networks and creates them", async () => {
     const initial = await app.inject({ method: "GET", url: "/api/networks" });
     expect(initial.statusCode).toBe(200);
-    expect(initial.json()).toEqual([{ name: "sessionbox", containers: [], managed: false }]);
+    expect(initial.json()).toEqual([]);
 
     const created = await app.inject({
       method: "POST",
@@ -94,13 +94,10 @@ describe("network resource", () => {
     expect(created.statusCode).toBe(201);
 
     const listed = await app.inject({ method: "GET", url: "/api/networks" });
-    expect(listed.json().map((network: { name: string }) => network.name)).toEqual([
-      "sessionbox",
-      "team-a",
-    ]);
+    expect(listed.json().map((network: { name: string }) => network.name)).toEqual(["team-a"]);
   });
 
-  it("reserves the default network name", async () => {
+  it("reserves the management network name", async () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/networks",
@@ -110,7 +107,7 @@ describe("network resource", () => {
     expect(response.json().error.code).toBe("INVALID_REQUEST");
   });
 
-  it("attaches containers at create time and reports networks on the model", async () => {
+  it("gives every container a private network and joins shared ones", async () => {
     await app.inject({ method: "POST", url: "/api/networks", payload: { name: "team-a" } });
 
     const created = await app.inject({
@@ -120,18 +117,27 @@ describe("network resource", () => {
     });
     expect(created.statusCode).toBe(201);
     const container = created.json();
-    expect(container.networks).toEqual(["sessionbox", "team-a"]);
+
+    // The private network comes first and is what isolates containers.
+    expect(container.networks[0]).toMatch(/^net-ctr_/);
+    expect(container.networks).toContain("team-a");
+    expect(container.networks).not.toContain("sessionbox");
 
     const listed = await app.inject({ method: "GET", url: "/api/networks" });
     const teamA = listed.json().find((network: { name: string }) => network.name === "team-a");
     expect(teamA.containers).toEqual([container.id]);
-    const defaultNetwork = listed.json().find(
-      (network: { name: string }) => network.name === "sessionbox",
-    );
-    expect(defaultNetwork.containers).toEqual([container.id]);
   });
 
-  it("attaches and detaches a running container", async () => {
+  it("isolates containers by default: different private networks", async () => {
+    const first = (await app.inject({ method: "POST", url: "/api/containers", payload: {} })).json();
+    const second = (await app.inject({ method: "POST", url: "/api/containers", payload: {} })).json();
+
+    expect(first.networks[0]).not.toBe(second.networks[0]);
+    // Neither container shares a network with the other.
+    expect(first.networks.some((name: string) => second.networks.includes(name))).toBe(false);
+  });
+
+  it("attaches and detaches a container from a shared network", async () => {
     await app.inject({ method: "POST", url: "/api/networks", payload: { name: "team-a" } });
     const created = await app.inject({ method: "POST", url: "/api/containers", payload: {} });
     const id = created.json().id as string;
@@ -141,23 +147,42 @@ describe("network resource", () => {
       url: `/api/containers/${id}/networks/team-a`,
     });
     expect(attached.statusCode).toBe(200);
-    expect(attached.json().networks).toEqual(["sessionbox", "team-a"]);
+    expect(attached.json().networks).toContain("team-a");
 
     const detached = await app.inject({
       method: "DELETE",
       url: `/api/containers/${id}/networks/team-a`,
     });
     expect(detached.statusCode).toBe(200);
-    expect(detached.json().networks).toEqual(["sessionbox"]);
+    expect(detached.json().networks).not.toContain("team-a");
   });
 
-  it("locks the default network on the container", async () => {
-    const created = await app.inject({ method: "POST", url: "/api/containers", payload: {} });
-    const id = created.json().id as string;
+  it("refuses to attach an unknown or private network", async () => {
+    const first = (await app.inject({ method: "POST", url: "/api/containers", payload: {} })).json();
+    const second = (await app.inject({ method: "POST", url: "/api/containers", payload: {} })).json();
+    const privateName = first.networks[0] as string;
+
+    const unknown = await app.inject({
+      method: "POST",
+      url: `/api/containers/${second.id}/networks/nope`,
+    });
+    expect(unknown.statusCode).toBe(404);
+
+    // Another container cannot join a private network.
+    const privateAttach = await app.inject({
+      method: "POST",
+      url: `/api/containers/${second.id}/networks/${privateName}`,
+    });
+    expect(privateAttach.statusCode).toBe(404);
+  });
+
+  it("locks the private network on the container", async () => {
+    const created = (await app.inject({ method: "POST", url: "/api/containers", payload: {} })).json();
+    const privateName = created.networks[0] as string;
 
     const response = await app.inject({
       method: "DELETE",
-      url: `/api/containers/${id}/networks/sessionbox`,
+      url: `/api/containers/${created.id}/networks/${privateName}`,
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("INVALID_REQUEST");
@@ -175,7 +200,6 @@ describe("network resource", () => {
     expect(refused.statusCode).toBe(409);
     expect(refused.json().error.code).toBe("INVALID_STATE");
 
-    // Detach everything, then deletion works.
     const containers = (await app.inject({ method: "GET", url: "/api/containers" })).json() as Array<{
       id: string;
     }>;
@@ -187,8 +211,12 @@ describe("network resource", () => {
     expect(deleted.statusCode).toBe(204);
   });
 
-  it("refuses to delete the default network", async () => {
-    const response = await app.inject({ method: "DELETE", url: "/api/networks/sessionbox" });
-    expect(response.statusCode).toBe(400);
+  it("drops the private network when the container is deleted", async () => {
+    const created = (await app.inject({ method: "POST", url: "/api/containers", payload: {} })).json();
+    const privateName = created.networks[0] as string;
+    expect(runtime.networks.has(privateName)).toBe(true);
+
+    await app.inject({ method: "DELETE", url: `/api/containers/${created.id}` });
+    expect(runtime.networks.has(privateName)).toBe(false);
   });
 });

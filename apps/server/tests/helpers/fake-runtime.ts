@@ -24,8 +24,8 @@ export class FakeRuntime implements ContainerRuntime {
   readonly containers = new Map<string, FakeContainer>();
   readonly images = new Set<string>();
   readonly createCalls: RuntimeCreateSpec[] = [];
-  /** Network name → attached container refs. */
-  readonly networks = new Map<string, Set<string>>();
+  /** Network name → attached container refs (private networks included). */
+  readonly networks = new Map<string, { refs: Set<string>; private: boolean }>();
 
   failNextCreate = false;
   failNextStart = false;
@@ -45,16 +45,16 @@ export class FakeRuntime implements ContainerRuntime {
     }
 
     const ref = `fake_${spec.containerId}`;
-    const networks = [this.defaultNetwork, ...(spec.networks ?? [])];
+    const networks = spec.networks ?? [this.defaultNetwork];
     this.containers.set(ref, {
       containerId: spec.containerId,
       status: "stopped",
       networks,
     });
-    for (const network of spec.networks ?? []) {
-      const refs = this.networks.get(network);
-      if (refs === undefined) throw new RuntimeNotFoundError(`network ${network} does not exist`);
-      refs.add(ref);
+    for (const network of networks) {
+      const entry = this.networks.get(network);
+      if (entry === undefined) throw new RuntimeNotFoundError(`network ${network} does not exist`);
+      entry.refs.add(ref);
     }
     return { ref, containerId: spec.containerId, status: "stopped", networks };
   }
@@ -104,8 +104,10 @@ export class FakeRuntime implements ContainerRuntime {
     return new PassThrough();
   }
 
-  async createNetwork(name: string): Promise<void> {
-    if (!this.networks.has(name)) this.networks.set(name, new Set());
+  async createNetwork(name: string, options: { private?: boolean } = {}): Promise<void> {
+    if (!this.networks.has(name)) {
+      this.networks.set(name, { refs: new Set(), private: options.private === true });
+    }
   }
 
   async deleteNetwork(name: string): Promise<void> {
@@ -113,23 +115,25 @@ export class FakeRuntime implements ContainerRuntime {
   }
 
   async listNetworks(): Promise<RuntimeNetwork[]> {
-    return [...this.networks.entries()].map(([name, refs]) => ({
-      name,
-      containerRefs: [...refs],
-    }));
+    return [...this.networks.entries()]
+      .filter(([, entry]) => !entry.private)
+      .map(([name, entry]) => ({
+        name,
+        containerRefs: [...entry.refs],
+      }));
   }
 
   async connectToNetwork(ref: string, name: string): Promise<void> {
-    const refs = this.networks.get(name);
-    if (refs === undefined) throw new RuntimeNotFoundError(`network ${name} does not exist`);
-    refs.add(ref);
+    const entry = this.networks.get(name);
+    if (entry === undefined) throw new RuntimeNotFoundError(`network ${name} does not exist`);
+    entry.refs.add(ref);
 
     const container = this.require(ref);
     if (!container.networks.includes(name)) container.networks.push(name);
   }
 
   async disconnectFromNetwork(ref: string, name: string): Promise<void> {
-    this.networks.get(name)?.delete(ref);
+    this.networks.get(name)?.refs.delete(ref);
     const container = this.containers.get(ref);
     if (container !== undefined) {
       container.networks = container.networks.filter((candidate) => candidate !== name);

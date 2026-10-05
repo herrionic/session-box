@@ -23,7 +23,7 @@ export function NewContainerPage(): JSX.Element {
   useEffect(() => {
     void (async () => {
       try {
-        setNetworks((await api.listNetworks()).filter((network) => network.managed));
+        setNetworks(await api.listNetworks());
       } catch {
         // The networks section is optional; creation works without it.
       }
