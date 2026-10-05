@@ -56,6 +56,9 @@ Read → Plan → Implement → Test → Explain.
 - Docker-dependent work (building images, sandbox lifecycle, SSH/SFTP,
   terminal integration) runs on the remote Linux host:
   sync with `scripts/sync.ps1`, operate with `scripts/remote.ps1`.
+  Current host (2026-10-05): `root@<remote-host>` with the key
+  `.ssh/deploy_key`; repository at `/srv/sessionbox`; dev topology via
+  `docker compose -f docker-compose.yml -f compose.dev.yml up -d`.
   The dev topology runs `tsx watch` + Vite; note that `tsx watch` does not
   always pick up files replaced by the tar sync — if a change seems ignored,
   run `scripts/remote.ps1 restart server` (docker compose restart).
