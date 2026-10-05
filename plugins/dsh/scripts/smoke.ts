@@ -10,15 +10,18 @@ import { SessionBoxConnection, SessionBoxFileSystem, SessionBoxShell } from "../
 const urlIndex = process.argv.indexOf("--url");
 const baseUrl = urlIndex >= 0 ? process.argv[urlIndex + 1] : "http://127.0.0.1:8787";
 const keep = process.argv.includes("--keep");
+const tokenIndex = process.argv.indexOf("--token");
+const token = tokenIndex >= 0 ? process.argv[tokenIndex + 1] : process.env.SESSIONBOX_TOKEN;
 
 if (baseUrl === undefined || baseUrl === "") {
-  console.error("usage: smoke.ts --url <baseUrl> [--keep]");
+  console.error("usage: smoke.ts --url <baseUrl> [--token <token>] [--keep]");
   process.exit(2);
 }
 
 const hostCwd = process.cwd();
 const connection = new SessionBoxConnection({
   baseUrl,
+  ...(token !== undefined && token !== "" ? { token } : {}),
   workspaceRoot: "/workspace",
   hostCwd,
   defaultTimeoutMs: 30_000,
@@ -67,7 +70,10 @@ try {
   log("container", containerId);
 
   if (!keep && containerId !== null) {
-    const response = await fetch(`${baseUrl}/api/containers/${containerId}`, { method: "DELETE" });
+    const response = await fetch(`${baseUrl}/api/containers/${containerId}`, {
+      method: "DELETE",
+      headers: token !== undefined && token !== "" ? { authorization: `Bearer ${token}` } : {},
+    });
     log("container.delete", response.status);
   }
 } catch (error) {
