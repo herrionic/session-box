@@ -1,20 +1,20 @@
 # SessionBox Integration Protocol
 
-How an agent harness (or any client) connects to a SessionBox service. This
-document is the integration contract: authentication, session → container
-binding, capability mapping, lifecycle ownership and failure semantics.
-Wire-level message schemas live in [`PROTOCOL.md`](PROTOCOL.md).
+How a client connects to a SessionBox service. This document is the integration
+contract: authentication, session → container binding, capability mapping,
+lifecycle ownership and failure semantics. Wire-level message schemas live in
+[`PROTOCOL.md`](PROTOCOL.md).
 
 ```text
-harness process ──REST + WebSocket──▶ SessionBox server ──SSH (per-container key)──▶ container
-                                            │
-                                            └── Docker socket (server-side only)
+client ──REST + WebSocket──▶ SessionBox server ──SSH (per-container key)──▶ container
+                                   │
+                                   └── container runtime (server-side only)
 ```
 
-- The adapter speaks only the public API. Containers are addressed by their
-  public id; container IPs, ports, SSH keys and Docker handles never leave the
+- The client speaks only the public API. Containers are addressed by their
+  public id; container IPs, ports, SSH keys and runtime handles never leave the
   server.
-- The server owns container lifecycle; the adapter owns session lifecycle. A
+- The server owns container lifecycle; the client owns session lifecycle. A
   disconnect never stops or deletes a container.
 
 ## 1. Authentication
@@ -79,18 +79,19 @@ private network and is reachable by the server only.
 
 Recommended strategies, in order of precision:
 
-1. **Pin by id** (`containerId`) — the adapter stores it with its session state.
+1. **Pin by id** (`containerId`) — the client stores it with its session state.
 2. **Reuse or create by name** (`containerName`) — stable across restarts.
-3. **Process-scoped default** (e.g. `dsh-<pid>`) — fine for a one-session CLI.
+3. **Process-scoped default** — a generated name, fine for a one-session
+   process.
 
 Rules:
 
-- One harness process (or one session) binds to one container. For per-session
+- One client process (or one session) binds to one container. For per-session
   isolation run one process per session; a multi-session host process shares
-  one container (documented limitation of the DSH adapter).
+  one container.
 - Containers outlive disconnects: reconnect with the stored id to get the same
   workspace and files.
-- The adapter decides when to create; the server decides when to stop
+- The client decides when to create; the server decides when to stop
   (lifecycle policy: idle timeout, max lifetime, delete-after-stop).
 
 ## 5. Capability mapping
@@ -100,32 +101,27 @@ tools. Two supported integration shapes:
 
 ### 5.1 Replace the capability providers (headless / custom compositions)
 
-Back the harness's filesystem and shell seams with SessionBox implementations:
+Back the host's filesystem and shell seams with SessionBox implementations:
 
 - Exactly one implementation per seam per context. Disable the built-in
-  providers in the composition before inserting yours — for DSH:
-  `fs-sandbox`, `bash-sandbox`, `pwsh-sandbox`; because the container is
-  Linux, also enable `tool-bash` and disable `tool-pwsh` on Windows hosts.
-- **Constraint**: Web/desktop compositions have consumers that assume host
-  filesystem access; replacing the seams there breaks session creation
-  (`sessionController` unavailable). Use headless/CLI profiles or a custom
-  composition whose consumers honor provider paths.
+  providers in the composition before inserting the replacement, and pick the
+  tool flavor that matches the container (a container is Linux, so the shell
+  tool should be the Linux one regardless of the host platform).
+- **Constraint**: UI-heavy compositions may have consumers that assume local
+  filesystem semantics; replacing the seams there can break unrelated services.
+  Prefer headless or custom compositions whose consumers honor provider paths.
 - Path mapping: the session's host working directory maps to the container
-  workspace (`/workspace`); paths outside fail closed. Shared helper:
-  `@sessionbox/shared` (`container-paths`).
-- Reference implementations: `plugins/dsh` (DSH bundle) and `plugins/pi`
-  (Pi extension re-registering the native tools).
+  workspace (`/workspace`); paths outside fail closed.
 
 ### 5.2 Expose container-backed tools (hosts that cannot replace seams)
 
-When a host cannot swap its capability providers (for example the DSH
-desktop/Web composition), expose a small tool set that executes through
-SessionBox. This is model-visible by nature and therefore a product decision,
-not the default.
+When a host cannot swap its capability providers, expose a small tool set that
+executes through SessionBox. This is model-visible by nature and therefore a
+product decision, not the default.
 
 ## 6. Lifecycle and ownership
 
-- A plugin disconnect never stops or deletes a container (PROJECT.md §39).
+- A client disconnect never stops or deletes a container (PROJECT.md §39).
 - Open agent or terminal connections count as activity; idle auto-stop only
   applies while no connection is active.
 - `deleteAfterStop` removes the container; otherwise it stays `stopped` and can
@@ -133,42 +129,19 @@ not the default.
 - Containers are isolated by default (one private network each). Cross-session
   connectivity is opt-in: attach both containers to the same shared network;
   attaching sets a DNS alias equal to the container name.
-- Credentials are per-container and sealed server-side; adapters never see
-  them. Deleting a container removes its credentials.
+- Credentials are per-container and sealed server-side; clients never see them.
+  Deleting a container removes its credentials.
 
-## 7. Minimal example (`@sessionbox/client`)
-
-```ts
-import { SessionBoxClient } from "@sessionbox/client";
-
-const client = new SessionBoxClient({ baseUrl, token });
-
-// Reuse or create by name (see §4).
-const existing = (await client.listContainers()).find((c) => c.name === "my-session");
-const container = existing ?? (await client.createContainer({ name: "my-session" }));
-
-const runtime = await client.connect(container.id);
-await runtime.exec("pwd && id", { timeoutMs: 10_000 });
-const file = await runtime.readFile("/workspace/README.md");
-await runtime.writeFile("/workspace/note.txt", "hello from the session\n");
-await runtime.close(); // ends the connection, never the container
-```
-
-- `SessionBoxClient`: `health`, `listContainers`, `createContainer`,
-  `getContainer`, `startContainer`, `stopContainer`, `restartContainer`,
-  `deleteContainer`, `updateContainerSettings`, `connect`.
-- `ContainerRuntime`: `exec`, `readFile`, `writeFile`, `listFiles`,
-  `statFile`, `mkdir`, `remove`, `close`.
-
-## 8. Versioning
+## 7. Versioning
 
 - `AGENT_PROTOCOL_VERSION` is currently **2**; breaking changes to message
   shapes bump it, and servers reject mismatched clients at the handshake.
 - The public container model is runtime-neutral; new fields are additive.
 
-## 9. What an adapter must never do
+## 8. What a client must never do
 
-- Import a container-runtime SDK (Docker, containerd, …) or assume Docker.
+- Import a container-runtime SDK (Docker, containerd, …) or assume a specific
+  runtime.
 - Read container IPs, ports, SSH keys or credentials — they are server-side
   only and never returned by the API.
 - Bypass the permission model, or cache tokens in logs.
