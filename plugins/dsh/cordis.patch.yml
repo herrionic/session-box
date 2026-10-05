@@ -1,6 +1,30 @@
-# SessionBox bundle patch: inserts the capability providers into the profile
-# composition. Configure the entry below (baseUrl/token) or use the
-# SESSIONBOX_URL / SESSIONBOX_TOKEN environment variables.
+# SessionBox bundle patch.
+#
+# SessionBox executes everything inside a Linux container, so it *replaces* the
+# host's local providers instead of stacking on top of them: `fs` and `shell`
+# allow exactly one implementation per context (see the dsh-fs / dsh-shell
+# service definitions; loading a second provider throws).
+#
+# The bash tool is enabled on every host platform because the container is
+# always Linux, and the PowerShell tool is disabled for the same reason.
+#
+# Configure the entry below, or override it from the profile patch with an
+# id-targeted entry (`- id: sessionbox` + `config`) or SESSIONBOX_* env vars.
+
+- id: fs-sandbox
+  disabled: true
+
+- id: bash-sandbox
+  disabled: true
+
+- id: pwsh-sandbox
+  disabled: true
+
+- id: tool-bash
+  disabled: false
+
+- id: tool-pwsh
+  disabled: true
 
 - insert:
     - id: sessionbox
