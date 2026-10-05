@@ -50,6 +50,7 @@ describe("network resource", () => {
       baseImage: testConfig.docker.baseImage,
       workspace: testConfig.docker.workspace,
       networkName: testConfig.docker.networkName,
+      privateNetworkCleanupDelayMs: 0,
       sshReadyTimeoutMs: 50,
       sshRetryIntervalMs: 1,
       sleep: async () => {},
@@ -217,6 +218,10 @@ describe("network resource", () => {
     expect(runtime.networks.has(privateName)).toBe(true);
 
     await app.inject({ method: "DELETE", url: `/api/containers/${created.id}` });
+
+    // The cleanup is deferred so the delete response is not dropped by the
+    // network-sandbox rebuild (see ContainerService.remove).
+    await new Promise((resolve) => setTimeout(resolve, 20));
     expect(runtime.networks.has(privateName)).toBe(false);
   });
 });

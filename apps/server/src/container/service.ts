@@ -38,6 +38,11 @@ export interface ContainerServiceOptions {
   sleep?: (ms: number) => Promise<void>;
   /** Clock used for record timestamps; injectable for tests. */
   now?: () => number;
+  /**
+   * Delay before the per-container private network is removed, so the delete
+   * response leaves the server before its network sandbox is rebuilt.
+   */
+  privateNetworkCleanupDelayMs?: number;
 }
 
 /** Default limits so every container is bounded even when none are requested. */
@@ -65,6 +70,7 @@ export class ContainerService {
   private readonly sshRetryIntervalMs: number;
   private readonly sleep: ((ms: number) => Promise<void>) | undefined;
   private readonly now: () => number;
+  private readonly privateNetworkCleanupDelayMs: number;
   /** Per-container operation chains: serializes concurrent state changes. */
   private readonly chains = new Map<string, Promise<unknown>>();
 
@@ -82,6 +88,7 @@ export class ContainerService {
     this.sshRetryIntervalMs = options.sshRetryIntervalMs ?? 500;
     this.sleep = options.sleep;
     this.now = options.now ?? Date.now;
+    this.privateNetworkCleanupDelayMs = options.privateNetworkCleanupDelayMs ?? 1_000;
   }
 
   async create(request: CreateContainerRequest): Promise<ContainerRecord> {
@@ -262,8 +269,15 @@ export class ContainerService {
         }
       }
 
-      // The private network exists only for this container; drop it best-effort.
-      await this.runtime.deleteNetwork(privateNetworkName(id)).catch(() => undefined);
+      // The server must detach itself before Docker lets the private network
+      // go, but a disconnect mid-request rebuilds this container's network
+      // sandbox and can drop the in-flight HTTP response. Defer the cleanup
+      // so the delete response reaches the client first.
+      const privateNetwork = privateNetworkName(id);
+      const cleanupTimer = setTimeout(() => {
+        void this.runtime.deleteNetwork(privateNetwork).catch(() => undefined);
+      }, this.privateNetworkCleanupDelayMs);
+      cleanupTimer.unref();
 
       await this.credentials.removeAll(id);
       await this.repository.delete(id);

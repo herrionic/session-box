@@ -34,7 +34,9 @@ socket.addEventListener("message", (event) => {
   const message = JSON.parse(String(event.data));
 
   if (message.type === "ready") {
-    socket.send(JSON.stringify({ type: "input", data: `${command}; echo ${MARKER}\n` }));
+    // `echo` first: commands ending without a newline (e.g. `head -c 16`)
+    // would otherwise glue their output to the marker line.
+    socket.send(JSON.stringify({ type: "input", data: `${command}; echo; echo ${MARKER}\n` }));
     return;
   }
 
