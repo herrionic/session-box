@@ -179,7 +179,9 @@ export class FakeSshSession implements SshSession {
 
     return [...this.nodes.entries()]
       .filter(([candidate]) => candidate !== target && posix.dirname(candidate) === target)
-      .map(([candidate, node]) => toEntry(candidate, node));
+      .map(([candidate, node]) =>
+        toEntry(candidate, node, node.type === "symlink" ? node.target : undefined),
+      );
   }
 
   async stat(path: string, options: { follow?: boolean } = {}): Promise<SshFileEntry> {
@@ -380,7 +382,6 @@ function toEntry(path: string, node: FakeNode, linkTarget?: string): SshFileEntr
     size,
     mode: node.mode,
     modifiedAt: node.modifiedAt,
-    version: `${node.modifiedAt}:${size}`,
     ...(linkTarget !== undefined ? { linkTarget } : {}),
   };
 }

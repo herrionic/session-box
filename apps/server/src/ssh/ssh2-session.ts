@@ -430,10 +430,19 @@ class Ssh2Session implements SshSession {
       (done) => sftp.readdir(path, done),
     );
 
-    return entries.map((entry) => {
+    const files: SshFileEntry[] = [];
+    for (const entry of entries) {
       const entryPath = posix.join(path, entry.filename);
-      return toFileEntry(entryPath, entry.filename, entry.attrs);
-    });
+      const file = toFileEntry(entryPath, entry.filename, entry.attrs);
+      if (file.type === "symlink") {
+        const target = await this.sftpCall<string>("read link", entryPath, (done) =>
+          sftp.readlink(entryPath, done),
+        ).catch(() => undefined);
+        if (target !== undefined) file.linkTarget = target;
+      }
+      files.push(file);
+    }
+    return files;
   }
 
   async stat(path: string, options: { follow?: boolean } = {}): Promise<SshFileEntry> {
@@ -627,15 +636,13 @@ function toFileEntry(
   else if (stats.isFile()) type = "file";
   else if (stats.isSymbolicLink()) type = "symlink";
 
-  const modifiedAt = stats.mtime * 1000;
   return {
     name,
     path,
     type,
     size: stats.size,
     mode: stats.mode,
-    modifiedAt,
-    version: `${modifiedAt}:${stats.size}`,
+    modifiedAt: stats.mtime * 1000,
     ...(linkTarget !== undefined ? { linkTarget } : {}),
   };
 }

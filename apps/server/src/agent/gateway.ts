@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { isUtf8 } from "node:buffer";
 import type { AgentRequest, AgentResponse, FileEntry } from "@sessionbox/protocol";
 import { SessionBoxError } from "../errors.ts";
@@ -7,12 +6,10 @@ import type { ContainerService } from "../container/service.ts";
 import { normalizeContainerPath } from "../ssh/paths.ts";
 import { toPublicSshError } from "../ssh/public-errors.ts";
 import { SshNotFoundError, type SshFileEntry, type SshSession } from "../ssh/session.ts";
+import { md5, toPublicEntry, versionOf } from "../ssh/versions.ts";
 
 /** Largest file the agent protocol will move in one message. */
 const MAX_TRANSFER_BYTES = 8 * 1024 * 1024;
-/** Above this size a version guard falls back to the cheap (mtime:size) form. */
-const MAX_HASH_BYTES = 64 * 1024 * 1024;
-const VERSION_DIGEST_LENGTH = 16;
 
 /** Default per-deployment caps; `main.ts` passes the configured values. */
 const DEFAULT_MAX_COMMAND_BYTES = 1024 * 1024;
@@ -150,11 +147,18 @@ export class AgentGateway {
         if (entry.size > MAX_TRANSFER_BYTES) throw tooLarge();
         const content = await session.readFile(path);
         if (!isTextChunk(content, true)) throw notText();
-        return contentResult(path, entry, content, 0, true, richVersion(entry, content));
+        return contentResult(path, entry, content, 0, true, md5(content));
       }
 
       if (requestedOffset >= entry.size) {
-        return contentResult(path, entry, Buffer.alloc(0), requestedOffset, true, entry.version);
+        return contentResult(
+          path,
+          entry,
+          Buffer.alloc(0),
+          requestedOffset,
+          true,
+          await versionOf(session, entry),
+        );
       }
 
       const maxLength = requestedLength ?? entry.size - requestedOffset;
@@ -162,8 +166,8 @@ export class AgentGateway {
       const content = await session.readFileRange(path, requestedOffset, effective);
       const eof = requestedOffset + content.length >= entry.size;
       if (!isTextChunk(content, requestedOffset === 0 && eof)) throw notText();
-      // A range is only part of the file, so its version stays the cheap form.
-      return contentResult(path, entry, content, requestedOffset, eof, entry.version);
+      // A range is only part of the file; the version is the whole-file hash.
+      return contentResult(path, entry, content, requestedOffset, eof, await versionOf(session, entry));
     });
 
     return { requestId: request.requestId, type: "file.read.result", file };
@@ -186,7 +190,7 @@ export class AgentGateway {
         contentBase64: content.toString("base64"),
         size: entry.size,
         modifiedAt: entry.modifiedAt,
-        version: richVersion(entry, content),
+        version: md5(content),
       };
     });
 
@@ -203,7 +207,7 @@ export class AgentGateway {
 
     const file = await this.containers.withSshSession(request.containerId, async (session) => {
       if (request.expected !== undefined) {
-        const current = await currentVersion(session, path, request.expected.version);
+        const current = await currentVersion(session, path);
         if (current !== request.expected.version) {
           throw new SessionBoxError("VERSION_CONFLICT", "the file changed since it was observed", {
             details: { current },
@@ -217,7 +221,7 @@ export class AgentGateway {
         path,
         size: entry.size,
         modifiedAt: entry.modifiedAt,
-        version: richVersion(entry, contentBytes),
+        version: md5(contentBytes),
       };
     });
 
@@ -274,7 +278,12 @@ export class AgentGateway {
 
     const entries: FileEntry[] = await this.containers.withSshSession(
       request.containerId,
-      (session) => session.list(path),
+      async (session) => {
+        const raw = await session.list(path);
+        return await Promise.all(
+          raw.map(async (entry) => toPublicEntry(entry, await versionOf(session, entry))),
+        );
+      },
     );
 
     return { requestId: request.requestId, type: "file.list.result", path, entries };
@@ -285,9 +294,10 @@ export class AgentGateway {
   ): Promise<AgentResponse> {
     const path = normalizeContainerPath(request.path);
 
-    const entry = await this.containers.withSshSession(request.containerId, (session) =>
-      session.stat(path, request.follow === false ? { follow: false } : {}),
-    );
+    const entry = await this.containers.withSshSession(request.containerId, async (session) => {
+      const raw = await session.stat(path, request.follow === false ? { follow: false } : {});
+      return toPublicEntry(raw, await versionOf(session, raw));
+    });
 
     return { requestId: request.requestId, type: "file.stat.result", entry };
   }
@@ -356,39 +366,16 @@ function contentResult(
 }
 
 /**
- * Current version of `path`, in the same shape as `expected`:
- * a digest version (`mtime:size:digest`) reads the file, the cheap form
- * (`mtime:size`) only stats it.
+ * Current version of `path` (the same MD5 every surface reports), or `null`
+ * when the path does not exist.
  */
-async function currentVersion(
-  session: SshSession,
-  path: string,
-  expected: string,
-): Promise<string | null> {
+async function currentVersion(session: SshSession, path: string): Promise<string | null> {
   const entry = await session.stat(path).catch((error: unknown) => {
     if (error instanceof SshNotFoundError) return undefined;
     throw error;
   });
   if (entry === undefined) return null;
-
-  if (!isRichVersion(expected) || entry.type !== "file" || entry.size > MAX_HASH_BYTES) {
-    return entry.version;
-  }
-  const content = await session.readFile(path);
-  return richVersion(entry, content);
-}
-
-/** `mtime:size:digest` — returned whenever the content is in hand. */
-function richVersion(entry: { modifiedAt: number; size: number }, content: Buffer): string {
-  return `${entry.modifiedAt}:${entry.size}:${contentDigest(content)}`;
-}
-
-function contentDigest(content: Buffer): string {
-  return createHash("sha256").update(content).digest("hex").slice(0, VERSION_DIGEST_LENGTH);
-}
-
-function isRichVersion(version: string): boolean {
-  return version.split(":").length >= 3;
+  return await versionOf(session, entry);
 }
 
 /**

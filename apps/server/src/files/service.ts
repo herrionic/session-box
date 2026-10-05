@@ -12,6 +12,7 @@ import type { Logger } from "../logging.ts";
 import { normalizeContainerPath } from "../ssh/paths.ts";
 import { toPublicSshError } from "../ssh/public-errors.ts";
 import type { SshSession } from "../ssh/session.ts";
+import { md5, toPublicEntry, versionOf } from "../ssh/versions.ts";
 import type { ContainerService } from "../container/service.ts";
 
 export interface ContainerFilesServiceOptions {
@@ -43,8 +44,11 @@ export class ContainerFilesService {
   async list(containerId: string, path: string): Promise<FileListResponse> {
     const target = this.resolve(path);
     return await this.run(containerId, async (session) => {
-      const entries = await session.list(target);
-      return { path: target, entries: entries.map((entry) => toFileEntry(entry)) };
+      const raw = await session.list(target);
+      const entries = await Promise.all(
+        raw.map(async (entry) => toPublicEntry(entry, await versionOf(session, entry))),
+      );
+      return { path: target, entries };
     });
   }
 
@@ -72,7 +76,7 @@ export class ContainerFilesService {
         content: content.toString("utf8"),
         size: entry.size,
         modifiedAt: entry.modifiedAt,
-        version: entry.version,
+        version: md5(content),
         offset: 0,
         length: content.length,
         eof: true,
@@ -98,7 +102,7 @@ export class ContainerFilesService {
         content: request.content,
         size: entry.size,
         modifiedAt: entry.modifiedAt,
-        version: entry.version,
+        version: md5(request.content),
         offset: 0,
         length: bytes,
         eof: true,
@@ -114,7 +118,8 @@ export class ContainerFilesService {
       } else {
         await session.writeFileAtomic(target, "");
       }
-      return toFileEntry(await session.stat(target));
+      const entry = await session.stat(target);
+      return toPublicEntry(entry, await versionOf(session, entry));
     });
   }
 
@@ -137,7 +142,7 @@ export class ContainerFilesService {
     const target = this.resolve(path);
     return await this.run(containerId, async (session) => {
       await session.writeFileAtomic(target, content);
-      return toFileEntry(await session.stat(target));
+      return toPublicEntry(await session.stat(target), md5(content));
     });
   }
 
@@ -155,7 +160,11 @@ export class ContainerFilesService {
           `file exceeds the ${this.maxUploadBytes} byte download limit`,
         );
       }
-      return { entry: toFileEntry(entry), content: await session.readFile(target) };
+      const content = await session.readFile(target);
+      return {
+        entry: toPublicEntry(entry, md5(content)),
+        content,
+      };
     });
   }
 
@@ -175,19 +184,6 @@ export class ContainerFilesService {
       throw toPublicSshError(error, this.logger, "file.operation.failed");
     }
   }
-}
-
-function toFileEntry(entry: FileEntry): FileEntry {
-  return {
-    name: entry.name,
-    path: entry.path,
-    type: entry.type,
-    size: entry.size,
-    mode: entry.mode,
-    modifiedAt: entry.modifiedAt,
-    version: entry.version,
-    ...(entry.linkTarget !== undefined ? { linkTarget: entry.linkTarget } : {}),
-  };
 }
 
 function assertRegularFile(entry: { type: string }): void {

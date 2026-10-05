@@ -77,12 +77,13 @@ private network and is reachable by the server only.
 5. Files: `file.read` is text-only and fails with `FS_NOT_TEXT` when the
    content is not valid UTF-8 or contains NUL bytes; `file.readBytes` returns
    base64 for binary content; `offset`/`length` read large files in ranges.
-   Writes are atomic (temp + rename) and accept an opaque `version` guard
-   (`VERSION_CONFLICT` on mismatch; full reads/writes carry a content digest,
-   list/stat versions are the cheaper `mtime:size` form); `file.stat` supports
-   lstat semantics (`follow: false`) for symlink safety. Paths are absolute
-   container paths — nothing is confined to the workspace, because the
-   container is the isolation boundary.
+   Writes are atomic (temp + rename) and accept a `version` guard
+   (`VERSION_CONFLICT` on mismatch); `version` is the MD5 of the resource
+   content (symlinks: the target; directories: a stat descriptor), identical
+   across read/write/stat/list. `file.stat` supports lstat semantics
+   (`follow: false`) for symlink safety. Paths are absolute container paths —
+   nothing is confined to the workspace, because the container is the
+   isolation boundary.
 6. Terminals: `terminal.open` allocates a programmable PTY (persistent `cd`,
    interactive REPLs); output and exit arrive as events keyed by
    `terminalId`.

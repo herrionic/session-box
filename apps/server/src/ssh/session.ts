@@ -27,8 +27,6 @@ export interface SshFileEntry {
   mode: number;
   /** Epoch milliseconds. */
   modifiedAt: number;
-  /** Opaque optimistic-concurrency version (`<mtimeMs>:<size>`). */
-  version: string;
   /** Symlink target, only when the entry was observed without following. */
   linkTarget?: string;
 }

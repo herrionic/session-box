@@ -435,6 +435,26 @@ describe("agent protocol (simulated harness sessions)", () => {
     await runtime.close();
   });
 
+  it("reports one consistent version from read, list and stat", async () => {
+    const { app, client } = await createFixture();
+    cleanups.push(() => app.close());
+
+    const container = await client.createContainer({});
+    const runtime = await client.connect(container.id);
+
+    const written = await runtime.writeFile("/workspace/consistent.txt", "same bytes");
+    const read = await runtime.readFile("/workspace/consistent.txt");
+    const stat = await runtime.statFile("/workspace/consistent.txt");
+    const listing = await runtime.listFiles("/workspace");
+    const listed = listing.entries.find((entry) => entry.name === "consistent.txt");
+
+    expect(read.version).toBe(written.version);
+    expect(stat.version).toBe(written.version);
+    expect(listed?.version).toBe(written.version);
+
+    await runtime.close();
+  });
+
   it("supports lstat semantics and symlink targets", async () => {
     const { app, client, ssh } = await createFixture();
     cleanups.push(() => app.close());
