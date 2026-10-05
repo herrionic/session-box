@@ -1,0 +1,9 @@
+# SessionBox bundle patch: inserts the capability providers into the profile
+# composition. Configure the entry below (baseUrl/token) or use the
+# SESSIONBOX_URL / SESSIONBOX_TOKEN environment variables.
+
+- insert:
+    - id: sessionbox
+      name: '@sessionbox/dsh-plugin'
+      config:
+        baseUrl: http://127.0.0.1:8787

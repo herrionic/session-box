@@ -1,29 +1,46 @@
 {
   "name": "@sessionbox/dsh-plugin",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "SessionBox capability providers for DeepSeek Harness (ctx.fs / ctx.shell)",
   "private": true,
   "type": "module",
+  "main": "dist/index.mjs",
   "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "files": [
+    "dist",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
     }
   },
   "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=esm --platform=node --target=node22 --outfile=dist/index.mjs --external:@deepseek-ai/*",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "smoke": "tsx scripts/smoke.ts"
   },
-  "dependencies": {
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.4",
+    "@deepseek-ai/dsh-fs": ">=0.2.0-rc.2",
+    "@deepseek-ai/dsh-sandbox": ">=0.2.0-rc.2",
+    "@deepseek-ai/dsh-shell": ">=0.2.0-rc.2"
+  },
+  "devDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/dsh-fs": "0.2.0-rc.2",
     "@deepseek-ai/dsh-sandbox": "0.2.0-rc.2",
     "@deepseek-ai/dsh-shell": "0.2.0-rc.2",
     "@sessionbox/client": "workspace:*",
-    "@sessionbox/shared": "workspace:*"
-  },
-  "devDependencies": {
+    "@sessionbox/shared": "workspace:*",
     "@types/node": "^24.19.0",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"
