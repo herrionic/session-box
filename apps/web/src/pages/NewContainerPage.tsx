@@ -1,5 +1,5 @@
-import { useState, type FormEvent, type JSX } from "react";
-import type { CreateContainerRequest } from "@sessionbox/protocol";
+import { useEffect, useState, type FormEvent, type JSX } from "react";
+import type { CreateContainerRequest, Network } from "@sessionbox/protocol";
 import { api } from "../api.ts";
 import { Alert, Button, Card, Field, INPUT_CLASS } from "../components/ui.tsx";
 import { describeError } from "../lib/errors.ts";
@@ -15,8 +15,20 @@ export function NewContainerPage(): JSX.Element {
   const [idleMinutes, setIdleMinutes] = useState("30");
   const [maxLifetimeMinutes, setMaxLifetimeMinutes] = useState("");
   const [deleteAfterStop, setDeleteAfterStop] = useState(false);
+  const [networks, setNetworks] = useState<Network[]>([]);
+  const [selectedNetworks, setSelectedNetworks] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        setNetworks((await api.listNetworks()).filter((network) => network.managed));
+      } catch {
+        // The networks section is optional; creation works without it.
+      }
+    })();
+  }, []);
 
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
@@ -31,6 +43,7 @@ export function NewContainerPage(): JSX.Element {
         ...(memory.trim() !== "" ? { memoryLimitMb: Number(memory) } : {}),
         ...(pids.trim() !== "" ? { pidsLimit: Number(pids) } : {}),
       },
+      ...(selectedNetworks.length > 0 ? { networks: selectedNetworks } : {}),
       lifecycle: {
         autoStop,
         ...(idleMinutes.trim() !== "" ? { idleTimeoutSeconds: Number(idleMinutes) * 60 } : {}),
@@ -116,6 +129,38 @@ export function NewContainerPage(): JSX.Element {
               />
             </Field>
           </div>
+        </Card>
+
+        <Card title="Networks">
+          <p className="mb-3 text-xs text-slate-500">
+            The default network is always attached. Pick shared networks so this container can
+            reach — and be reached by — other sessions by name.
+          </p>
+          {networks.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              No shared networks yet — create one on the Networks page.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {networks.map((network) => (
+                <label key={network.name} className="flex items-center gap-2 text-sm text-slate-300">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-indigo-500"
+                    checked={selectedNetworks.includes(network.name)}
+                    onChange={(event) =>
+                      setSelectedNetworks((current) =>
+                        event.target.checked
+                          ? [...current, network.name]
+                          : current.filter((name) => name !== network.name),
+                      )
+                    }
+                  />
+                  <span className="font-mono">{network.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
         </Card>
 
         <Card title="Lifecycle">

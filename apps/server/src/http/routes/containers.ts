@@ -11,6 +11,11 @@ import type { SessionBoxApp } from "../types.ts";
 
 const IdParamsSchema = z.strictObject({ id: z.string().min(1) });
 
+const NetworkParamsSchema = z.strictObject({
+  id: z.string().min(1),
+  network: z.string().min(1),
+});
+
 const LogsQuerySchema = z.strictObject({
   tail: z.coerce.number().int().min(1).max(5000).optional(),
 });
@@ -70,6 +75,18 @@ export function registerContainerRoutes(
     const { id } = IdParamsSchema.parse(request.params);
     const patch = UpdateContainerSettingsRequestSchema.parse(request.body ?? {});
     return toPublicContainer(await service.updateSettings(id, patch));
+  });
+
+  app.post("/api/containers/:id/networks/:network", async (request) => {
+    requirePermission(request.principal, PERMISSIONS.execute);
+    const { id, network } = NetworkParamsSchema.parse(request.params);
+    return toPublicContainer(await service.attachNetwork(id, network));
+  });
+
+  app.delete("/api/containers/:id/networks/:network", async (request) => {
+    requirePermission(request.principal, PERMISSIONS.execute);
+    const { id, network } = NetworkParamsSchema.parse(request.params);
+    return toPublicContainer(await service.detachNetwork(id, network));
   });
 
   app.get("/api/containers/:id/logs", async (request) => {

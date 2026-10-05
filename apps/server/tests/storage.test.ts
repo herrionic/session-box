@@ -60,7 +60,7 @@ function createService(runtime: FakeRuntime, databaseFile: string): ServiceInsta
 
 describe("SQLite persistence", () => {
   it("reports schema version 2 and opens idempotently", async () => {
-    expect(SCHEMA_VERSION).toBe(2);
+    expect(SCHEMA_VERSION).toBe(3);
 
     const file = await tempDatabaseFile();
     const first = openDatabase(file);
@@ -99,7 +99,7 @@ describe("SQLite persistence", () => {
     const version = migrated
       .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    expect(version.value).toBe("2");
+    expect(version.value).toBe("3");
     migrated.close();
   });
 
@@ -144,7 +144,7 @@ describe("SQLite persistence", () => {
     const empty = createService(runtime, file);
     empty.close();
 
-    runtime.containers.set("ref_orphan", { containerId: "ctr_orphan", status: "running" });
+    runtime.containers.set("ref_orphan", { containerId: "ctr_orphan", status: "running", networks: [] });
 
     const after = createService(runtime, file);
     await after.service.reconcile();

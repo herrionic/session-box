@@ -16,6 +16,8 @@ export interface ContainerRecord {
   runtime: string;
   status: ContainerStatus;
   workspace: string;
+  /** Networks this container is attached to; the default network is first. */
+  networks: string[];
   resources: ContainerResources;
   lifecycle: LifecyclePolicy;
   createdAt: string;
@@ -39,6 +41,7 @@ export function toPublicContainer(record: ContainerRecord): Container {
     runtime: record.runtime,
     status: record.status,
     workspace: record.workspace,
+    networks: record.networks,
     resources: record.resources,
     lifecycle: record.lifecycle,
     createdAt: record.createdAt,

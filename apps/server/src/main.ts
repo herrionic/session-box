@@ -7,6 +7,7 @@ import { ContainerFilesService } from "./files/service.ts";
 import { buildApp } from "./http/app.ts";
 import { LifecycleService } from "./lifecycle/service.ts";
 import { createLogger } from "./logging.ts";
+import { NetworkService } from "./network/service.ts";
 import { createRuntime } from "./runtime/index.ts";
 import { ContainerService } from "./container/service.ts";
 import { SshSessionManager } from "./ssh/manager.ts";
@@ -63,6 +64,7 @@ async function main(): Promise<void> {
     logger,
     baseImage: config.docker.baseImage,
     workspace: config.docker.workspace,
+    networkName: config.docker.networkName,
   });
   const files = new ContainerFilesService({
     containers: service,
@@ -70,8 +72,14 @@ async function main(): Promise<void> {
     logger,
   });
   const gateway = new AgentGateway(service, logger);
+  const networks = new NetworkService({
+    runtime,
+    repository,
+    defaultNetwork: config.docker.networkName,
+    logger,
+  });
 
-  const app = await buildApp({ config, logger, runtime, service, files, gateway, auth });
+  const app = await buildApp({ config, logger, runtime, service, files, gateway, auth, networks });
 
   try {
     await service.reconcile();

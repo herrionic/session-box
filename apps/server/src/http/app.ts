@@ -11,6 +11,7 @@ import type { ServerConfig } from "../config.ts";
 import { SessionBoxError, isSessionBoxError } from "../errors.ts";
 import type { ContainerFilesService } from "../files/service.ts";
 import type { Logger } from "../logging.ts";
+import type { NetworkService } from "../network/service.ts";
 import type { ContainerRuntime } from "../runtime/types.ts";
 import type { ContainerService } from "../container/service.ts";
 import { createAuthHook } from "./auth.ts";
@@ -18,6 +19,7 @@ import { registerAgentRoutes } from "./routes/agent.ts";
 import { registerAuthRoutes } from "./routes/auth.ts";
 import { registerFileRoutes } from "./routes/files.ts";
 import { registerHealthRoutes } from "./routes/health.ts";
+import { registerNetworkRoutes } from "./routes/networks.ts";
 import { registerContainerRoutes } from "./routes/containers.ts";
 import { registerTerminalRoutes } from "./routes/terminal.ts";
 import type { SessionBoxApp } from "./types.ts";
@@ -31,6 +33,8 @@ export interface AppDependencies {
   gateway: AgentGateway;
   /** Single-owner user system; absent in tests that only exercise the API. */
   auth?: AuthService;
+  /** Network resource management; absent in tests that do not exercise it. */
+  networks?: NetworkService;
 }
 
 export async function buildApp(deps: AppDependencies): Promise<SessionBoxApp> {
@@ -112,6 +116,9 @@ export async function buildApp(deps: AppDependencies): Promise<SessionBoxApp> {
   registerHealthRoutes(app, { config: deps.config, runtime: deps.runtime });
   if (deps.auth !== undefined) {
     registerAuthRoutes(app, { auth: deps.auth });
+  }
+  if (deps.networks !== undefined) {
+    registerNetworkRoutes(app, { networks: deps.networks });
   }
   registerContainerRoutes(app, { service: deps.service });
   registerFileRoutes(app, { files: deps.files });

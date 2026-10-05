@@ -308,6 +308,7 @@ describe("public projection", () => {
         "image",
         "lifecycle",
         "name",
+        "networks",
         "resources",
         "runtime",
         "startedAt",

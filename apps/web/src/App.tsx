@@ -4,6 +4,7 @@ import { Layout } from "./components/Layout.tsx";
 import { ContainerPage } from "./pages/ContainerPage.tsx";
 import { ContainersPage } from "./pages/ContainersPage.tsx";
 import { LoginPage } from "./pages/LoginPage.tsx";
+import { NetworksPage } from "./pages/NetworksPage.tsx";
 import { NewContainerPage } from "./pages/NewContainerPage.tsx";
 import { SettingsPage } from "./pages/SettingsPage.tsx";
 import { navigate, useRoute } from "./router.ts";
@@ -65,6 +66,8 @@ export function App(): JSX.Element {
     page = <ContainerPage containerId={decodeURIComponent(detail[1] ?? "")} />;
   } else if (route === "/settings") {
     page = <SettingsPage user={user} onUser={setUser} />;
+  } else if (route === "/networks") {
+    page = <NetworksPage />;
   } else {
     page = <ContainersPage />;
   }

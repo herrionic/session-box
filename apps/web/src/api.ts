@@ -1,10 +1,12 @@
 import type {
   Container,
   CreateContainerRequest,
+  CreateNetworkRequest,
   ErrorResponse,
   FileContent,
   FileEntry,
   FileListResponse,
+  Network,
   UpdateContainerSettingsRequest,
 } from "@sessionbox/protocol";
 
@@ -89,6 +91,24 @@ export const api = {
 
   updateSettings: (id: string, patch: UpdateContainerSettingsRequest): Promise<Container> =>
     request(`/api/containers/${id}/settings`, { method: "PATCH", body: JSON.stringify(patch) }),
+
+  // ---- networks ---------------------------------------------------------
+  listNetworks: (): Promise<Network[]> => request("/api/networks"),
+
+  createNetwork: (name: string): Promise<Network> =>
+    request("/api/networks", {
+      method: "POST",
+      body: JSON.stringify({ name } satisfies CreateNetworkRequest),
+    }),
+
+  deleteNetwork: (name: string): Promise<void> =>
+    request(`/api/networks/${encodeURIComponent(name)}`, { method: "DELETE" }),
+
+  attachNetwork: (id: string, network: string): Promise<Container> =>
+    request(`/api/containers/${id}/networks/${encodeURIComponent(network)}`, { method: "POST" }),
+
+  detachNetwork: (id: string, network: string): Promise<Container> =>
+    request(`/api/containers/${id}/networks/${encodeURIComponent(network)}`, { method: "DELETE" }),
 
   // ---- files ------------------------------------------------------------
   listFiles: (id: string, path: string): Promise<FileListResponse> =>

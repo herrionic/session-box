@@ -2,13 +2,14 @@ import { useCallback, useEffect, useState, type JSX } from "react";
 import type { Container } from "@sessionbox/protocol";
 import { api } from "../api.ts";
 import { FileBrowser } from "../components/FileBrowser.tsx";
+import { NetworkPanel } from "../components/NetworkPanel.tsx";
 import { TerminalPanel } from "../components/TerminalPanel.tsx";
 import { Alert, Button, Card, Field, INPUT_CLASS, StatusBadge } from "../components/ui.tsx";
 import { PlayIcon, RestartIcon, StopIcon, TrashIcon } from "../components/Icons.tsx";
 import { describeError } from "../lib/errors.ts";
 import { navigate } from "../router.ts";
 
-type Tab = "overview" | "files" | "terminal";
+type Tab = "overview" | "files" | "terminal" | "network";
 
 export function ContainerPage({ containerId }: { containerId: string }): JSX.Element {
   const [container, setContainer] = useState<Container | null>(null);
@@ -122,7 +123,7 @@ export function ContainerPage({ containerId }: { containerId: string }): JSX.Ele
       {error !== null && <Alert>{error}</Alert>}
 
       <div className="flex gap-1 border-b border-slate-800">
-        {(["overview", "files", "terminal"] as const).map((name) => (
+        {(["overview", "files", "terminal", "network"] as const).map((name) => (
           <button
             key={name}
             type="button"
@@ -165,6 +166,7 @@ export function ContainerPage({ containerId }: { containerId: string }): JSX.Ele
 
       {tab === "files" && <FileBrowser containerId={container.id} />}
       {tab === "terminal" && <TerminalPanel containerId={container.id} />}
+      {tab === "network" && <NetworkPanel container={container} onChanged={setContainer} />}
     </div>
   );
 }

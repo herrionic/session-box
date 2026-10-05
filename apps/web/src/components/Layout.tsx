@@ -29,6 +29,7 @@ export function Layout({
               to="/"
               active={current === "/" || current.startsWith("/containers")}
             />
+            <NavLink label="Networks" to="/networks" active={current === "/networks"} />
             <NavLink label="Settings" to="/settings" active={current === "/settings"} />
             <span className="mx-3 text-sm text-slate-400">{user.displayName}</span>
             <Button variant="secondary" onClick={onLogout}>

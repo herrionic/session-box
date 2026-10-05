@@ -17,6 +17,8 @@ export interface RuntimeCreateSpec {
   workspace: string;
   resources: ContainerResources;
   env?: Record<string, string>;
+  /** Extra shared networks to attach; the default network is always attached. */
+  networks?: string[];
 }
 
 export type RuntimeContainerStatus = "running" | "stopped";
@@ -32,6 +34,16 @@ export interface RuntimeContainer {
   name?: string;
   image?: string;
   createdAt?: string;
+  /** Names of the networks this container is attached to. */
+  networks?: string[];
+}
+
+/** A runtime-managed network (e.g. a Docker user-defined bridge). */
+export interface RuntimeNetwork {
+  name: string;
+  createdAt?: string;
+  /** Refs of the containers attached to this network. */
+  containerRefs: string[];
 }
 
 export interface ContainerRuntime {
@@ -50,6 +62,15 @@ export interface ContainerRuntime {
   /** Lists managed containers, e.g. for restart reconciliation. */
   list(): Promise<RuntimeContainer[]>;
   logs(ref: string, options?: { tailLines?: number }): Promise<string>;
+
+  // ---- networks (shared connectivity between containers) -----------------
+  /** Creates a managed network; creating an existing one is a no-op. */
+  createNetwork(name: string): Promise<void>;
+  deleteNetwork(name: string): Promise<void>;
+  /** Lists managed networks (the default network is not included). */
+  listNetworks(): Promise<RuntimeNetwork[]>;
+  connectToNetwork(ref: string, name: string, aliases?: string[]): Promise<void>;
+  disconnectFromNetwork(ref: string, name: string): Promise<void>;
 
   /**
    * Opens a raw duplex TCP stream to a port inside a running container.

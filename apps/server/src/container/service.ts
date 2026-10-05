@@ -29,6 +29,8 @@ export interface ContainerServiceOptions {
   logger: Logger;
   baseImage: string;
   workspace: string;
+  /** Default network every container joins (also the server's management network). */
+  networkName?: string;
   /** How long to wait for sshd inside a new container before failing. */
   sshReadyTimeoutMs?: number;
   sshRetryIntervalMs?: number;
@@ -58,6 +60,7 @@ export class ContainerService {
   private readonly logger: Logger;
   private readonly baseImage: string;
   private readonly workspace: string;
+  private readonly networkName: string;
   private readonly sshReadyTimeoutMs: number;
   private readonly sshRetryIntervalMs: number;
   private readonly sleep: ((ms: number) => Promise<void>) | undefined;
@@ -74,6 +77,7 @@ export class ContainerService {
     this.logger = options.logger;
     this.baseImage = options.baseImage;
     this.workspace = options.workspace;
+    this.networkName = options.networkName ?? "sessionbox";
     this.sshReadyTimeoutMs = options.sshReadyTimeoutMs ?? 30_000;
     this.sshRetryIntervalMs = options.sshRetryIntervalMs ?? 500;
     this.sleep = options.sleep;
@@ -82,6 +86,7 @@ export class ContainerService {
 
   async create(request: CreateContainerRequest): Promise<ContainerRecord> {
     const id = newContainerId();
+    const extraNetworks = request.networks ?? [];
     const record: ContainerRecord = {
       id,
       name: request.name ?? defaultName(id),
@@ -89,6 +94,7 @@ export class ContainerService {
       runtime: this.runtime.runtimeId,
       status: "creating",
       workspace: this.workspace,
+      networks: [this.networkName, ...extraNetworks],
       resources: { ...DEFAULT_RESOURCES, ...request.resources },
       lifecycle: resolveLifecyclePolicy(request.lifecycle),
       createdAt: nowIso(this.now()),
@@ -114,6 +120,7 @@ export class ContainerService {
         workspace: record.workspace,
         resources: record.resources,
         env: { SESSIONBOX_AUTHORIZED_KEY: keyPair.publicKey },
+        ...(extraNetworks.length > 0 ? { networks: extraNetworks } : {}),
       });
       record.runtimeRef = created.ref;
 
@@ -345,6 +352,57 @@ export class ContainerService {
     await this.repository.save(record);
   }
 
+  /** Attaches a container to a shared network (idempotent). */
+  async attachNetwork(id: string, network: string): Promise<ContainerRecord> {
+    const record = await this.require(id);
+    if (record.networks.includes(network)) return record;
+    if (record.runtimeRef === undefined) {
+      throw new SessionBoxError("INVALID_STATE", "container has no runtime handle yet");
+    }
+
+    try {
+      await this.runtime.connectToNetwork(record.runtimeRef, network, [record.name]);
+    } catch (error) {
+      if (error instanceof RuntimeNotFoundError) {
+        throw new SessionBoxError("NOT_FOUND", `network ${network} was not found`);
+      }
+      throw new SessionBoxError("RUNTIME_ERROR", "could not attach the container to the network");
+    }
+
+    record.networks = [...record.networks, network];
+    await this.repository.save(record);
+    this.logger.info(
+      { event: "container.network.attached", containerId: id, network },
+      "container attached to network",
+    );
+    return record;
+  }
+
+  /** Detaches a container from a shared network; the default one is locked. */
+  async detachNetwork(id: string, network: string): Promise<ContainerRecord> {
+    const record = await this.require(id);
+    if (network === this.networkName) {
+      throw new SessionBoxError("INVALID_REQUEST", "the default network cannot be detached");
+    }
+    if (!record.networks.includes(network)) return record;
+
+    if (record.runtimeRef !== undefined) {
+      try {
+        await this.runtime.disconnectFromNetwork(record.runtimeRef, network);
+      } catch {
+        throw new SessionBoxError("RUNTIME_ERROR", "could not detach the container from the network");
+      }
+    }
+
+    record.networks = record.networks.filter((name) => name !== network);
+    await this.repository.save(record);
+    this.logger.info(
+      { event: "container.network.detached", containerId: id, network },
+      "container detached from network",
+    );
+    return record;
+  }
+
   /**
    * Reconciles persisted state with the runtime after a server restart
    * (PROJECT.md §33). Containers that disappeared are marked `failed`;
@@ -388,8 +446,10 @@ export class ContainerService {
       }
 
       const status: ContainerStatus = actual.status === "running" ? "running" : "stopped";
-      if (record.status !== status) {
+      const networks = actual.networks ?? record.networks;
+      if (record.status !== status || !sameStringSet(record.networks, networks)) {
         record.status = status;
+        record.networks = networks;
         if (actual.startedAt !== undefined) record.startedAt = actual.startedAt;
         await this.repository.save(record);
         if (status === "stopped") await this.sessions.release(record.id);
@@ -425,6 +485,7 @@ export class ContainerService {
         runtime: this.runtime.runtimeId,
         status: container.status === "running" ? "running" : "stopped",
         workspace: this.workspace,
+        networks: container.networks ?? [this.networkName],
         resources: {},
         lifecycle: { autoStop: false, deleteAfterStop: false },
         createdAt: container.createdAt ?? nowIso(this.now()),
@@ -497,6 +558,12 @@ export class ContainerService {
 
 function defaultName(id: string): string {
   return `container-${id.slice(4, 10).toLowerCase()}`;
+}
+
+function sameStringSet(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((value) => rightSet.has(value));
 }
 
 function applyLifecyclePatch(

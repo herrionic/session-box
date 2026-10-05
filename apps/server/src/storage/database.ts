@@ -3,7 +3,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 /** Monotonic schema version; bump with every structural migration. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /**
  * Opens the SessionBox database and applies migrations. Node's built-in
@@ -40,6 +40,17 @@ function migrate(database: DatabaseSync): void {
     createUserTables(database);
   }
 
+  if (current < 3) {
+    // v2 predates the network resource: containers only knew the default
+    // network, so an empty list is the correct backfill.
+    if (
+      tableExists(database, "containers") &&
+      !columnExists(database, "containers", "networks")
+    ) {
+      database.exec("ALTER TABLE containers ADD COLUMN networks TEXT NOT NULL DEFAULT '[]'");
+    }
+  }
+
   writeSchemaVersion(database, SCHEMA_VERSION);
 }
 
@@ -52,6 +63,7 @@ function createContainerTables(database: DatabaseSync): void {
       runtime TEXT NOT NULL,
       status TEXT NOT NULL,
       workspace TEXT NOT NULL,
+      networks TEXT NOT NULL DEFAULT '[]',
       resources TEXT NOT NULL,
       lifecycle TEXT NOT NULL,
       created_at TEXT NOT NULL,
@@ -110,6 +122,11 @@ function tableExists(database: DatabaseSync, name: string): boolean {
     database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !==
     undefined
   );
+}
+
+function columnExists(database: DatabaseSync, table: string, column: string): boolean {
+  const rows = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return rows.some((row) => row.name === column);
 }
 
 function readSchemaVersion(database: DatabaseSync): number {

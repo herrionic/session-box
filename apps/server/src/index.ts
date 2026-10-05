@@ -11,6 +11,7 @@ export { EncryptedCredentialStore, InMemoryCredentialStore, type CredentialStore
 export { buildApp, type AppDependencies } from "./http/app.ts";
 export { ContainerFilesService, type ContainerFilesServiceOptions } from "./files/service.ts";
 export { LifecycleService, type LifecycleServiceOptions } from "./lifecycle/service.ts";
+export { NetworkService, type NetworkServiceOptions } from "./network/service.ts";
 export { createLogger, redactToken } from "./logging.ts";
 export { createRuntime } from "./runtime/index.ts";
 export { InMemoryContainerRepository, type ContainerRepository } from "./container/repository.ts";

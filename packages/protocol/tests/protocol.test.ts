@@ -51,6 +51,7 @@ describe("public container model", () => {
     runtime: "docker",
     status: "running",
     workspace: "/workspace",
+    networks: [],
     resources: {},
     lifecycle: { autoStop: false, deleteAfterStop: false },
     createdAt: "2026-10-01T00:00:00.000Z",

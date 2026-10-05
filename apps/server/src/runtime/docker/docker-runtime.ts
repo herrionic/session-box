@@ -4,7 +4,12 @@ import type { Duplex } from "node:stream";
 import Docker from "dockerode";
 import type { Logger } from "../../logging.ts";
 import { RuntimeError, RuntimeNotFoundError } from "../types.ts";
-import type { RuntimeCreateSpec, RuntimeContainer, ContainerRuntime } from "../types.ts";
+import type {
+  RuntimeCreateSpec,
+  RuntimeContainer,
+  RuntimeNetwork,
+  ContainerRuntime,
+} from "../types.ts";
 import { SERVER_VERSION } from "../../version.ts";
 
 const MANAGED_LABEL = "sessionbox.managed";
@@ -134,6 +139,10 @@ export class DockerRuntime implements ContainerRuntime {
         },
       });
 
+      for (const networkName of spec.networks ?? []) {
+        await this.connectToNetwork(container.id, networkName, [spec.name]);
+      }
+
       return { ref: container.id, containerId: spec.containerId, status: "stopped" };
     } catch (error) {
       throw this.wrap(error, `create container ${spec.containerId}`);
@@ -202,6 +211,7 @@ export class DockerRuntime implements ContainerRuntime {
         image: container.Image,
         createdAt: new Date(container.Created * 1000).toISOString(),
         status: container.State === "running" ? "running" : "stopped",
+        networks: Object.keys(container.NetworkSettings?.Networks ?? {}),
       }));
     } catch (error) {
       throw this.wrap(error, "list containers");
@@ -240,6 +250,79 @@ export class DockerRuntime implements ContainerRuntime {
         reject(new RuntimeError("failed to open a connection into the container", { cause: error }));
       });
     });
+  }
+
+  // ---- networks ----------------------------------------------------------
+
+  async createNetwork(name: string): Promise<void> {
+    try {
+      await this.docker.createNetwork({
+        Name: name,
+        Driver: "bridge",
+        Labels: { [MANAGED_LABEL]: "true" },
+      });
+    } catch (error) {
+      if (dockerStatusCode(error) === 409) return; // already exists
+      throw this.wrap(error, `create network ${name}`);
+    }
+  }
+
+  async deleteNetwork(name: string): Promise<void> {
+    try {
+      await this.docker.getNetwork(name).remove();
+    } catch (error) {
+      if (dockerStatusCode(error) === 404) return; // already gone
+      throw this.wrap(error, `delete network ${name}`);
+    }
+  }
+
+  async listNetworks(): Promise<RuntimeNetwork[]> {
+    try {
+      // The network *list* endpoint does not report attached containers, so
+      // derive the attachments from the managed containers' network names.
+      const [networks, containers] = await Promise.all([
+        this.docker.listNetworks({ filters: { label: [`${MANAGED_LABEL}=true`] } }),
+        this.docker.listContainers({ all: true, filters: { label: [`${MANAGED_LABEL}=true`] } }),
+      ]);
+      return networks
+        .filter((network) => network.Name !== this.options.networkName)
+        .map((network) => ({
+          name: network.Name,
+          ...(network.Created !== undefined ? { createdAt: network.Created } : {}),
+          containerRefs: containers
+            .filter(
+              (container) =>
+                container.NetworkSettings?.Networks?.[network.Name] !== undefined,
+            )
+            .map((container) => container.Id),
+        }));
+    } catch (error) {
+      throw this.wrap(error, "list networks");
+    }
+  }
+
+  async connectToNetwork(ref: string, name: string, aliases?: string[]): Promise<void> {
+    try {
+      await this.docker.getNetwork(name).connect({
+        Container: ref,
+        ...(aliases !== undefined && aliases.length > 0
+          ? { EndpointConfig: { Aliases: aliases } }
+          : {}),
+      });
+    } catch (error) {
+      if (errorMessage(error).includes("already exists")) return; // idempotent
+      throw this.wrap(error, `attach container to network ${name}`);
+    }
+  }
+
+  async disconnectFromNetwork(ref: string, name: string): Promise<void> {
+    try {
+      await this.docker.getNetwork(name).disconnect({ Container: ref, Force: true });
+    } catch (error) {
+      if (dockerStatusCode(error) === 404) return; // network gone
+      if (errorMessage(error).includes("is not connected")) return;
+      throw this.wrap(error, `detach container from network ${name}`);
+    }
   }
 
   /**
@@ -356,6 +439,7 @@ function toRuntimeContainer(info: Docker.ContainerInspectInfo): RuntimeContainer
     startedAtRaw && !startedAtRaw.startsWith("0001-") ? startedAtRaw : undefined;
   const createdAtRaw = info.Created;
   const createdAt = createdAtRaw ? new Date(createdAtRaw).toISOString() : undefined;
+  const networks = Object.keys(info.NetworkSettings?.Networks ?? {});
 
   return {
     ref: info.Id,
@@ -365,6 +449,7 @@ function toRuntimeContainer(info: Docker.ContainerInspectInfo): RuntimeContainer
     status: info.State?.Running ? "running" : "stopped",
     ...(startedAt ? { startedAt } : {}),
     ...(createdAt ? { createdAt } : {}),
+    ...(networks.length > 0 ? { networks } : {}),
   };
 }
 

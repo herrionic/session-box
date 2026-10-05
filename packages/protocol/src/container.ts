@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { NetworkNameSchema } from "./network.ts";
 
 export const ContainerStatusSchema = z.enum([
   "creating",
@@ -36,6 +37,8 @@ export const ContainerSchema = z.strictObject({
   runtime: z.string().min(1),
   status: ContainerStatusSchema,
   workspace: z.string().min(1),
+  /** Networks this container is attached to (the default one included). */
+  networks: z.array(z.string()),
   resources: ContainerResourcesSchema,
   lifecycle: z.object({
     autoStop: z.boolean(),
@@ -56,6 +59,8 @@ export const CreateContainerRequestSchema = z.strictObject({
   name: z.string().min(1).max(64).optional(),
   image: z.string().min(1).optional(),
   resources: ContainerResourcesSchema.optional(),
+  /** Extra shared networks to attach in addition to the default network. */
+  networks: z.array(NetworkNameSchema).max(8).optional(),
   lifecycle: z
     .strictObject({
       autoStop: z.boolean().optional(),

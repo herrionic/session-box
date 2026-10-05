@@ -9,6 +9,7 @@ interface ContainerRow {
   runtime: string;
   status: string;
   workspace: string;
+  networks: string;
   resources: string;
   lifecycle: string;
   created_at: string;
@@ -27,15 +28,16 @@ export class SqliteContainerRepository implements ContainerRepository {
     this.database
       .prepare(
         `INSERT INTO containers (
-           id, name, image, runtime, status, workspace, resources, lifecycle,
+           id, name, image, runtime, status, workspace, networks, resources, lifecycle,
            created_at, started_at, stopped_at, last_activity_at, active_connections, runtime_ref
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            image = excluded.image,
            runtime = excluded.runtime,
            status = excluded.status,
            workspace = excluded.workspace,
+           networks = excluded.networks,
            resources = excluded.resources,
            lifecycle = excluded.lifecycle,
            created_at = excluded.created_at,
@@ -52,6 +54,7 @@ export class SqliteContainerRepository implements ContainerRepository {
         record.runtime,
         record.status,
         record.workspace,
+        JSON.stringify(record.networks),
         JSON.stringify(record.resources),
         JSON.stringify(record.lifecycle),
         record.createdAt,
@@ -90,6 +93,7 @@ function toRecord(row: ContainerRow): ContainerRecord {
     runtime: row.runtime,
     status: row.status as ContainerRecord["status"],
     workspace: row.workspace,
+    networks: JSON.parse(row.networks) as string[],
     resources: JSON.parse(row.resources) as ContainerRecord["resources"],
     lifecycle: JSON.parse(row.lifecycle) as ContainerRecord["lifecycle"],
     createdAt: row.created_at,
