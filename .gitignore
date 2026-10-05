@@ -16,6 +16,9 @@ data/
 .env.local
 .env.*.local
 
+# local operator notes (host addresses, tokens) â€” never commit
+.dev-notes.local.md
+
 # SSH keys for the remote Docker host â€” never commit these
 .ssh/
 
@@ -27,6 +30,6 @@ logs/
 .DS_Store
 Thumbs.db
 
-# vendored reference sources (agent harnesses) ¡ª never commit
+# vendored reference sources (agent harnesses) ï¿½ï¿½ never commit
 .vendor/
 *.zip

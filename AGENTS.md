@@ -54,10 +54,11 @@ Read → Plan → Implement → Test → Explain.
 - Local development (Windows, **no Docker installed**):
   `corepack pnpm install`, `corepack pnpm typecheck`, `corepack pnpm test`.
 - Docker-dependent work (building images, sandbox lifecycle, SSH/SFTP,
-  terminal integration) runs on the remote Linux host:
+  terminal integration) runs on a remote Linux host:
   sync with `scripts/sync.ps1`, operate with `scripts/remote.ps1`.
-  Current host (2026-10-05): `root@<remote-host>` with the key
-  `.ssh/deploy_key`; repository at `/srv/sessionbox`; dev topology via
+  Host address, SSH user and key path are operator-local: keep them in
+  `.dev-notes.local.md` (gitignored) and never in tracked files.
+  The repository is deployed at `/srv/sessionbox`; dev topology via
   `docker compose -f docker-compose.yml -f compose.dev.yml up -d`.
   The dev topology runs `tsx watch` + Vite; note that `tsx watch` does not
   always pick up files replaced by the tar sync — if a change seems ignored,

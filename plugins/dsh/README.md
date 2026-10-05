@@ -50,7 +50,7 @@ Example `cordis.yml` entry:
 ```yaml
 plugins:
   '@sessionbox/dsh-plugin':
-    baseUrl: http://<remote-host>:8787
+    baseUrl: http://localhost:8787
     sandboxName: dsh-dev
 ```
 
