@@ -17,7 +17,7 @@ export { createRuntime } from "./runtime/index.ts";
 export { InMemoryContainerRepository, type ContainerRepository } from "./container/repository.ts";
 export { ContainerService, type ContainerServiceOptions } from "./container/service.ts";
 export { toPublicContainer, type ContainerRecord } from "./container/types.ts";
-export { openDatabase, SCHEMA_VERSION } from "./storage/database.ts";
+export { openDatabase } from "./storage/database.ts";
 export { SqliteContainerRepository } from "./storage/container-repository.ts";
 export { InMemorySecretRepository, SqliteSecretRepository, type SecretRepository } from "./storage/secret-repository.ts";
 export { generateSshKeyPair, SSH_PRIVATE_KEY_CREDENTIAL } from "./ssh/keypair.ts";

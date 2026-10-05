@@ -1,13 +1,12 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { EncryptedCredentialStore } from "../src/credentials/store.ts";
 import { ContainerService } from "../src/container/service.ts";
 import { SSH_PRIVATE_KEY_CREDENTIAL } from "../src/ssh/keypair.ts";
 import { SshSessionManager } from "../src/ssh/manager.ts";
-import { openDatabase, SCHEMA_VERSION } from "../src/storage/database.ts";
+import { openDatabase } from "../src/storage/database.ts";
 import { SqliteContainerRepository } from "../src/storage/container-repository.ts";
 import { SqliteSecretRepository } from "../src/storage/secret-repository.ts";
 import { FakeRuntime } from "./helpers/fake-runtime.ts";
@@ -59,48 +58,12 @@ function createService(runtime: FakeRuntime, databaseFile: string): ServiceInsta
 }
 
 describe("SQLite persistence", () => {
-  it("reports schema version 2 and opens idempotently", async () => {
-    expect(SCHEMA_VERSION).toBe(3);
-
+  it("creates the schema and opens idempotently", async () => {
     const file = await tempDatabaseFile();
     const first = openDatabase(file);
     first.close();
     const second = openDatabase(file);
     second.close();
-  });
-
-  it("migrates a v1 database: the legacy table is renamed to containers", async () => {
-    const file = await tempDatabaseFile();
-    const raw = new DatabaseSync(file);
-    raw.exec(`
-      CREATE TABLE sandboxes (
-        id TEXT PRIMARY KEY, name TEXT NOT NULL, image TEXT NOT NULL, runtime TEXT NOT NULL,
-        status TEXT NOT NULL, workspace TEXT NOT NULL, resources TEXT NOT NULL,
-        lifecycle TEXT NOT NULL, created_at TEXT NOT NULL, started_at TEXT, stopped_at TEXT,
-        last_activity_at TEXT, active_connections INTEGER NOT NULL DEFAULT 0, runtime_ref TEXT
-      );
-      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      INSERT INTO meta (key, value) VALUES ('schema_version', '1');
-      INSERT INTO sandboxes VALUES (
-        'sbx_legacy', 'legacy', 'img', 'docker', 'stopped', '/workspace',
-        '{}', '{"autoStop":false,"deleteAfterStop":false}', '2026-01-01T00:00:00.000Z',
-        NULL, NULL, NULL, 0, NULL
-      );
-    `);
-    raw.close();
-
-    const migrated = openDatabase(file);
-    const rows = migrated.prepare("SELECT id, name FROM containers").all() as Array<{
-      id: string;
-      name: string;
-    }>;
-    expect(rows).toEqual([{ id: "sbx_legacy", name: "legacy" }]);
-
-    const version = migrated
-      .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
-      .get() as { value: string };
-    expect(version.value).toBe("3");
-    migrated.close();
   });
 
   it("keeps containers manageable across a server restart", async () => {
