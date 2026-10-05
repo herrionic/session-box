@@ -40,7 +40,10 @@ socket.addEventListener("message", (event) => {
 
   if (message.type === "output") {
     buffer += message.data;
-    if (buffer.includes(MARKER)) {
+    // The PTY echoes the command line, which also contains the marker text;
+    // only treat a line that is exactly the marker as completion.
+    const done = buffer.split(/\r?\n/).some((line) => line.trim() === MARKER);
+    if (done) {
       clearTimeout(timer);
       socket.close();
       console.log(buffer);

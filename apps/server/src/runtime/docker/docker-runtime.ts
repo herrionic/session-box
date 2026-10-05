@@ -118,7 +118,10 @@ export class DockerRuntime implements ContainerRuntime {
           Privileged: false,
           CapDrop: ["ALL"],
           CapAdd: CONTAINER_CAPABILITIES,
-          SecurityOpt: ["no-new-privileges"],
+          // No `no-new-privileges`: the setuid sudo binary must be able to
+          // elevate so agents can install system packages (ADR-0003). The
+          // capability set above, the missing socket and the missing host
+          // mounts keep container-root bounded.
           PidsLimit: spec.resources.pidsLimit ?? DEFAULT_PIDS_LIMIT,
           RestartPolicy: { Name: "no" },
           AutoRemove: false,

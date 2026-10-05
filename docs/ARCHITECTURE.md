@@ -124,16 +124,18 @@ removes the credential entry.
 
 ## 7. Security posture (MVP)
 
-- Container containers: non-root user, all capabilities dropped except the
-  minimum sshd needs, `no-new-privileges`, PID/memory/CPU limits, no socket,
-  no published ports, dedicated bridge network.
+- Containers: non-root user with passwordless sudo for system-level changes,
+  all capabilities dropped except the minimum sshd needs, PID/memory/CPU
+  limits, no socket, no published ports, dedicated bridge network (ADR-0003).
 - Per-container SSH credentials: ephemeral ed25519 keypair, private key sealed
   with AES-256-GCM, never returned through the API.
-- API authentication: bearer tokens from `SESSIONBOX_CLIENTS` with coarse
-  permissions (`container:create/read/execute/write/delete/admin`), enforced on
-  REST and both WebSocket surfaces. Browser sockets pass the token as a query
-  parameter and the logger redacts it. Without configured clients the API is
-  open (development default) and a warning is logged at startup.
+- API authentication: single-owner login (HttpOnly session cookies for the web
+  UI), `sbt_…` API tokens (SHA-256 at rest) generated on the Settings page, and
+  legacy `SESSIONBOX_CLIENTS` static tokens. Coarse permissions
+  (`container:create/read/execute/write/delete/admin`) are enforced on REST and
+  both WebSocket surfaces; WebSocket and download URLs carry the token in the
+  query and the logger redacts it. Without an owner account and without
+  configured clients the API is open (development default).
 - Lifecycle: auto-stop on idle timeout / maximum lifetime with
   delete-after-stop; live agent or terminal connections always keep a container
   alive. Enforced by SessionBox, never by a plugin.

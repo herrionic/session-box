@@ -21,8 +21,17 @@ RUN apt-get update \
       less \
       openssh-server \
       procps \
+      sudo \
       tini \
  && rm -rf /var/lib/apt/lists/*
+
+# Passwordless sudo: agents routinely need system packages (`apt-get install`)
+# and global tool installs. The container remains the isolation boundary:
+# capabilities are dropped to the sshd minimum, there is no Docker socket and
+# no host mount (ADR-0003).
+RUN printf 'agent ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/agent \
+ && chmod 0440 /etc/sudoers.d/agent \
+ && visudo -cf /etc/sudoers.d/agent
 
 # Non-root user that agent sessions log in as. The random password only serves
 # to unlock the account for sshd's account check; password authentication is
