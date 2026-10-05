@@ -16,6 +16,18 @@ export function newContainerId(now: number = Date.now()): string {
   return `ctr_${newUlid(now)}`;
 }
 
+export function newUserId(): string {
+  return `usr_${newUlid()}`;
+}
+
+export function newSessionId(): string {
+  return `ssn_${newUlid()}`;
+}
+
+export function newApiTokenId(): string {
+  return `tok_${newUlid()}`;
+}
+
 export function newRequestId(): string {
   return `req_${newUlid()}`;
 }

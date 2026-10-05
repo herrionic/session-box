@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type JSX } from "react";
 import type { FileEntry } from "@sessionbox/protocol";
 import { api } from "../api.ts";
-import { describeError } from "./ContainerList.tsx";
+import { describeError } from "../lib/errors.ts";
+import { Alert, Button } from "./ui.tsx";
 
 const WORKSPACE = "/workspace";
 
@@ -109,97 +110,104 @@ export function FileBrowser({ containerId }: { containerId: string }): JSX.Eleme
   const segments = path.split("/").filter((segment) => segment !== "");
 
   return (
-    <>
-      <section className="card">
-        <div className="file-toolbar">
-          <nav className="breadcrumbs">
-            <button type="button" className="link-button" onClick={() => navigate("/")}>
+    <div className="space-y-4">
+      <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <nav className="flex flex-wrap items-center gap-1 text-sm">
+            <button
+              type="button"
+              className="text-slate-400 transition hover:text-slate-200"
+              onClick={() => navigate("/")}
+            >
               /
             </button>
             {segments.map((segment, index) => {
               const target = `/${segments.slice(0, index + 1).join("/")}`;
               return (
-                <span key={target}>
-                  <button type="button" className="link-button" onClick={() => navigate(target)}>
+                <span key={target} className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    className="text-slate-400 transition hover:text-slate-200"
+                    onClick={() => navigate(target)}
+                  >
                     {segment}
                   </button>
-                  {index < segments.length - 1 ? <span className="crumb-sep">/</span> : null}
+                  {index < segments.length - 1 ? <span className="text-slate-600">/</span> : null}
                 </span>
               );
             })}
           </nav>
-          <div className="actions">
-            <button type="button" className="secondary" onClick={() => void create("file")}>
+
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => void create("file")}>
               New file
-            </button>
-            <button type="button" className="secondary" onClick={() => void create("directory")}>
+            </Button>
+            <Button variant="secondary" onClick={() => void create("directory")}>
               New folder
-            </button>
-            <button type="button" className="secondary" onClick={() => uploadRef.current?.click()}>
+            </Button>
+            <Button variant="secondary" onClick={() => uploadRef.current?.click()}>
               Upload
-            </button>
-            <button type="button" className="secondary" disabled={busy} onClick={() => void load(path)}>
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={() => void load(path)}>
               Refresh
-            </button>
+            </Button>
             <input ref={uploadRef} type="file" hidden onChange={(event) => void onUpload(event)} />
           </div>
         </div>
 
         {error !== null && (
-          <div className="alert" role="alert">
-            {error}
-            <button type="button" className="link" onClick={() => setError(null)}>
-              dismiss
-            </button>
+          <div className="mb-3">
+            <Alert>{error}</Alert>
           </div>
         )}
 
         {entries.length === 0 ? (
-          <p className="empty">This directory is empty.</p>
+          <p className="py-6 text-center text-sm text-slate-500">This directory is empty.</p>
         ) : (
-          <table className="container-table">
+          <table className="w-full text-left text-sm">
             <thead>
-              <tr>
-                <th>Name</th>
-                <th>Size</th>
-                <th>Modified</th>
-                <th className="actions-header">Actions</th>
+              <tr className="border-b border-slate-800 text-xs uppercase tracking-wider text-slate-500">
+                <th className="py-2 pr-4 font-medium">Name</th>
+                <th className="py-2 pr-4 font-medium">Size</th>
+                <th className="py-2 pr-4 font-medium">Modified</th>
+                <th className="py-2 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
               {entries.map((entry) => (
-                <tr key={entry.path}>
-                  <td>
-                    <span className="file-icon">{entry.type === "directory" ? "📁" : "📄"}</span>
-                    {entry.type === "directory" ? (
-                      <button
-                        type="button"
-                        className="link-button"
-                        onClick={() => navigate(entry.path)}
-                      >
-                        {entry.name}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="link-button"
-                        onClick={() => void openEditor(entry)}
-                      >
-                        {entry.name}
-                      </button>
-                    )}
-                  </td>
-                  <td>{entry.type === "directory" ? "—" : formatSize(entry.size)}</td>
-                  <td>{new Date(entry.modifiedAt).toLocaleString()}</td>
-                  <td className="actions">
-                    {entry.type === "file" ? (
-                      <a className="button-link" href={api.downloadUrl(containerId, entry.path)}>
-                        Download
-                      </a>
-                    ) : null}
-                    <button type="button" className="danger" onClick={() => void removeEntry(entry)}>
-                      Delete
+                <tr key={entry.path} className="border-b border-slate-800/60 last:border-0">
+                  <td className="py-2 pr-4">
+                    <span className="mr-2">{entry.type === "directory" ? "📁" : "📄"}</span>
+                    <button
+                      type="button"
+                      className="text-slate-200 transition hover:text-indigo-300"
+                      onClick={() =>
+                        entry.type === "directory" ? navigate(entry.path) : void openEditor(entry)
+                      }
+                    >
+                      {entry.name}
                     </button>
+                  </td>
+                  <td className="py-2 pr-4 text-slate-400">
+                    {entry.type === "directory" ? "—" : formatSize(entry.size)}
+                  </td>
+                  <td className="py-2 pr-4 text-slate-400">
+                    {new Date(entry.modifiedAt).toLocaleString()}
+                  </td>
+                  <td className="py-2">
+                    <div className="flex justify-end gap-2">
+                      {entry.type === "file" ? (
+                        <a
+                          className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-200 transition hover:bg-slate-700"
+                          href={api.downloadUrl(containerId, entry.path)}
+                        >
+                          Download
+                        </a>
+                      ) : null}
+                      <Button variant="danger" onClick={() => void removeEntry(entry)}>
+                        Delete
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -208,28 +216,31 @@ export function FileBrowser({ containerId }: { containerId: string }): JSX.Eleme
         )}
       </section>
 
-      {openFile !== null ? (
-        <section className="card">
-          <div className="file-toolbar">
-            <h2 className="mono">{openFile.path}</h2>
-            <div className="actions">
-              <button
-                type="button"
+      {openFile !== null && (
+        <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-mono text-sm text-slate-300">{openFile.path}</h2>
+            <div className="flex gap-2">
+              <Button
                 disabled={saving || openFile.content === openFile.original}
                 onClick={() => void save()}
               >
                 {saving ? "Saving…" : "Save"}
-              </button>
-              <a className="button-link" href={api.downloadUrl(containerId, openFile.path)}>
+              </Button>
+              <a
+                className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-200 transition hover:bg-slate-700"
+                href={api.downloadUrl(containerId, openFile.path)}
+              >
                 Download
               </a>
-              <button type="button" className="secondary" onClick={() => setOpenFile(null)}>
+              <Button variant="secondary" onClick={() => setOpenFile(null)}>
                 Close
-              </button>
+              </Button>
             </div>
           </div>
+
           <textarea
-            className="editor"
+            className="h-80 w-full rounded-lg border border-slate-700 bg-slate-950 p-3 font-mono text-sm text-slate-100 outline-none transition focus:border-indigo-500"
             value={openFile.content}
             spellCheck={false}
             onChange={(event) =>
@@ -239,8 +250,8 @@ export function FileBrowser({ containerId }: { containerId: string }): JSX.Eleme
             }
           />
         </section>
-      ) : null}
-    </>
+      )}
+    </div>
   );
 }
 

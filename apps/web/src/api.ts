@@ -1,10 +1,10 @@
 import type {
+  Container,
   CreateContainerRequest,
   ErrorResponse,
   FileContent,
   FileEntry,
   FileListResponse,
-  Container,
   UpdateContainerSettingsRequest,
 } from "@sessionbox/protocol";
 
@@ -18,23 +18,18 @@ export class ApiError extends Error {
   }
 }
 
-const TOKEN_STORAGE_KEY = "sessionbox.token";
-
-export function getToken(): string | null {
-  return window.localStorage.getItem(TOKEN_STORAGE_KEY);
+export interface SessionUser {
+  id: string;
+  username: string;
+  displayName: string;
 }
 
-export function setToken(token: string | null): void {
-  if (token === null || token.trim() === "") {
-    window.localStorage.removeItem(TOKEN_STORAGE_KEY);
-    return;
-  }
-  window.localStorage.setItem(TOKEN_STORAGE_KEY, token.trim());
-}
-
-function authHeaders(): Record<string, string> {
-  const token = getToken();
-  return token === null ? {} : { authorization: `Bearer ${token}` };
+export interface ApiTokenEntry {
+  id: string;
+  name: string;
+  prefix: string;
+  createdAt: string;
+  lastUsedAt?: string;
 }
 
 async function parseError(response: Response): Promise<ApiError> {
@@ -45,14 +40,13 @@ async function parseError(response: Response): Promise<ApiError> {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
-    ...authHeaders(),
     ...(init?.headers as Record<string, string> | undefined),
   };
   if (init?.body !== undefined) {
     headers["content-type"] = "application/json";
   }
 
-  const response = await fetch(path, { ...init, headers });
+  const response = await fetch(path, { ...init, headers, credentials: "same-origin" });
 
   if (response.status === 204) {
     return undefined as T;
@@ -65,7 +59,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+function buildQuery(params: Record<string, string | number | undefined>): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) query.set(key, String(value));
+  }
+  return query.toString();
+}
+
 export const api = {
+  // ---- containers -------------------------------------------------------
   list: (): Promise<Container[]> => request("/api/containers"),
 
   get: (id: string): Promise<Container> => request(`/api/containers/${id}`),
@@ -87,11 +90,12 @@ export const api = {
   updateSettings: (id: string, patch: UpdateContainerSettingsRequest): Promise<Container> =>
     request(`/api/containers/${id}/settings`, { method: "PATCH", body: JSON.stringify(patch) }),
 
+  // ---- files ------------------------------------------------------------
   listFiles: (id: string, path: string): Promise<FileListResponse> =>
-    request(`/api/containers/${id}/files?path=${encodeURIComponent(path)}`),
+    request(`/api/containers/${id}/files?${buildQuery({ path })}`),
 
   readFile: (id: string, path: string): Promise<FileContent> =>
-    request(`/api/containers/${id}/files/content?path=${encodeURIComponent(path)}`),
+    request(`/api/containers/${id}/files/content?${buildQuery({ path })}`),
 
   writeFile: (id: string, path: string, content: string): Promise<FileContent> =>
     request(`/api/containers/${id}/files/content`, {
@@ -106,20 +110,17 @@ export const api = {
     }),
 
   removeFile: (id: string, path: string, recursive = false): Promise<void> =>
-    request(
-      `/api/containers/${id}/files?path=${encodeURIComponent(path)}${recursive ? "&recursive=true" : ""}`,
-      { method: "DELETE" },
-    ),
+    request(`/api/containers/${id}/files?${buildQuery({ path, recursive: recursive ? "true" : undefined })}`, {
+      method: "DELETE",
+    }),
 
   uploadFile: async (id: string, path: string, file: File): Promise<FileEntry> => {
-    const response = await fetch(
-      `/api/containers/${id}/files/upload?path=${encodeURIComponent(path)}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/octet-stream", ...authHeaders() },
-        body: file,
-      },
-    );
+    const response = await fetch(`/api/containers/${id}/files/upload?${buildQuery({ path })}`, {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+      credentials: "same-origin",
+      body: file,
+    });
     if (!response.ok) throw await parseError(response);
     return (await response.json()) as FileEntry;
   },
@@ -131,19 +132,29 @@ export const api = {
     `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/api/ws/terminal/${id}?${buildQuery(
       { cols: params?.cols, rows: params?.rows },
     )}`,
-};
 
-/**
- * WebSocket and download URLs cannot set headers; carry the token in the
- * query. Built with URLSearchParams so an existing query is never concatenated
- * twice.
- */
-function buildQuery(params: Record<string, string | number | undefined>): string {
-  const query = new URLSearchParams();
-  const token = getToken();
-  if (token !== null) query.set("token", token);
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined) query.set(key, String(value));
-  }
-  return query.toString();
-}
+  // ---- auth (single owner) ---------------------------------------------
+  login: (username: string, password: string): Promise<{ user: SessionUser }> =>
+    request("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+
+  logout: (): Promise<void> => request("/api/auth/logout", { method: "POST" }),
+
+  me: (): Promise<{ user: SessionUser }> => request("/api/auth/me"),
+
+  updateProfile: (displayName: string): Promise<{ user: SessionUser }> =>
+    request("/api/auth/me", { method: "PATCH", body: JSON.stringify({ displayName }) }),
+
+  changePassword: (currentPassword: string, newPassword: string): Promise<{ changed: boolean }> =>
+    request("/api/auth/password", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+
+  listTokens: (): Promise<{ tokens: ApiTokenEntry[] }> => request("/api/auth/tokens"),
+
+  createToken: (name: string): Promise<{ token: string; entry: ApiTokenEntry }> =>
+    request("/api/auth/tokens", { method: "POST", body: JSON.stringify({ name }) }),
+
+  revokeToken: (id: string): Promise<void> =>
+    request(`/api/auth/tokens/${id}`, { method: "DELETE" }),
+};

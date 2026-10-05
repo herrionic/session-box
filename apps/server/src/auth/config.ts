@@ -6,6 +6,11 @@ export interface ClientConfig {
 
 export interface AuthConfig {
   clients: ClientConfig[];
+  /** Owner account seeded on first start (single-user mode). */
+  admin?: {
+    username: string;
+    password?: string;
+  };
 }
 
 export const ALL_PERMISSIONS = "*";

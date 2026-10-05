@@ -4,8 +4,16 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import type { TerminalServerMessage } from "@sessionbox/protocol";
 import { api } from "../api.ts";
+import { Alert, Button } from "./ui.tsx";
 
 type ConnectionState = "connecting" | "connected" | "closed" | "error";
+
+const STATE_STYLES: Record<ConnectionState, string> = {
+  connecting: "bg-amber-950/60 text-amber-300",
+  connected: "bg-emerald-950/60 text-emerald-300",
+  closed: "bg-slate-800 text-slate-400",
+  error: "bg-rose-950/60 text-rose-300",
+};
 
 export function TerminalPanel({ containerId }: { containerId: string }): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -22,9 +30,7 @@ export function TerminalPanel({ containerId }: { containerId: string }): JSX.Ele
     setState("connecting");
     setError(null);
 
-    const socket = new WebSocket(
-      api.terminalUrl(containerId, { cols: term.cols, rows: term.rows }),
-    );
+    const socket = new WebSocket(api.terminalUrl(containerId, { cols: term.cols, rows: term.rows }));
     socketRef.current = socket;
 
     socket.onopen = () => setState("connected");
@@ -61,7 +67,7 @@ export function TerminalPanel({ containerId }: { containerId: string }): JSX.Ele
       fontSize: 13,
       fontFamily: 'Consolas, "Courier New", monospace',
       theme: {
-        background: "#0f172a",
+        background: "#020617",
         foreground: "#e2e8f0",
         cursor: "#93c5fd",
       },
@@ -100,24 +106,26 @@ export function TerminalPanel({ containerId }: { containerId: string }): JSX.Ele
   }, [connect]);
 
   return (
-    <section className="card terminal-card">
-      <div className="file-toolbar">
-        <h2>
-          Terminal <span className={`conn conn-${state}`}>{state}</span>
+    <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+          Terminal
+          <span className={`rounded-full px-2 py-0.5 text-xs font-medium normal-case ${STATE_STYLES[state]}`}>
+            {state}
+          </span>
         </h2>
-        <div className="actions">
-          <button
-            type="button"
-            className="secondary"
-            onClick={connect}
-            disabled={state === "connecting"}
-          >
-            Reconnect
-          </button>
-        </div>
+        <Button variant="secondary" onClick={connect} disabled={state === "connecting"}>
+          Reconnect
+        </Button>
       </div>
-      {error !== null && <div className="alert">{error}</div>}
-      <div className="terminal-container" ref={containerRef} />
+
+      {error !== null && (
+        <div className="mb-3">
+          <Alert>{error}</Alert>
+        </div>
+      )}
+
+      <div className="terminal-host overflow-hidden rounded-lg bg-slate-950" ref={containerRef} />
     </section>
   );
 }

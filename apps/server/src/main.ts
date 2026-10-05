@@ -1,4 +1,5 @@
 import { AgentGateway } from "./agent/gateway.ts";
+import { AuthService } from "./auth/service.ts";
 import { loadConfig } from "./config.ts";
 import { parseMasterKey } from "./credentials/master-key.ts";
 import { EncryptedCredentialStore } from "./credentials/store.ts";
@@ -13,17 +14,15 @@ import { Ssh2SessionFactory } from "./ssh/ssh2-session.ts";
 import { openDatabase } from "./storage/database.ts";
 import { SqliteContainerRepository } from "./storage/container-repository.ts";
 import { SqliteSecretRepository } from "./storage/secret-repository.ts";
+import {
+  SqliteApiTokenRepository,
+  SqliteSessionRepository,
+  SqliteUserRepository,
+} from "./storage/user-repository.ts";
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const logger = createLogger(config.logLevel);
-
-  if (config.auth.clients.length === 0) {
-    logger.warn(
-      { event: "server.auth.disabled" },
-      "SESSIONBOX_CLIENTS is not configured; the API is unauthenticated",
-    );
-  }
 
   const masterKey = parseMasterKey(config.masterKey);
   if (masterKey === undefined) {
@@ -37,6 +36,20 @@ async function main(): Promise<void> {
   const repository = new SqliteContainerRepository(database);
   const secrets = new SqliteSecretRepository(database);
   const credentials = new EncryptedCredentialStore(masterKey, secrets);
+
+  const auth = new AuthService({
+    users: new SqliteUserRepository(database),
+    sessions: new SqliteSessionRepository(database),
+    tokens: new SqliteApiTokenRepository(database),
+    logger,
+  });
+  await auth.ensureOwner(config.auth.admin?.username ?? "admin", config.auth.admin?.password);
+  if (!auth.enforced && config.auth.clients.length === 0) {
+    logger.warn(
+      { event: "server.auth.disabled" },
+      "no owner account and no SESSIONBOX_CLIENTS configured; the API is open",
+    );
+  }
 
   const runtime = createRuntime(config, logger);
   const ssh = new Ssh2SessionFactory({ runtime, credentials, logger });
@@ -58,7 +71,7 @@ async function main(): Promise<void> {
   });
   const gateway = new AgentGateway(service, logger);
 
-  const app = await buildApp({ config, logger, runtime, service, files, gateway });
+  const app = await buildApp({ config, logger, runtime, service, files, gateway, auth });
 
   try {
     await service.reconcile();

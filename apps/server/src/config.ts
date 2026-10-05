@@ -54,7 +54,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     databaseFile: env.SESSIONBOX_DATABASE_FILE?.trim() || join(dataDir, "sessionbox.db"),
     ...(webDist ? { webDist } : {}),
     ...(masterKey ? { masterKey } : {}),
-    auth: loadAuthConfig(env.SESSIONBOX_CLIENTS),
+    auth: {
+      ...loadAuthConfig(env.SESSIONBOX_CLIENTS),
+      admin: {
+        username: env.SESSIONBOX_ADMIN_USERNAME?.trim() || "admin",
+        ...(env.SESSIONBOX_ADMIN_PASSWORD?.trim()
+          ? { password: env.SESSIONBOX_ADMIN_PASSWORD.trim() }
+          : {}),
+      },
+    },
     lifecycle: {
       intervalMs: parsePositiveInteger(env.SESSIONBOX_LIFECYCLE_INTERVAL_MS, "SESSIONBOX_LIFECYCLE_INTERVAL_MS") ?? 15_000,
     },

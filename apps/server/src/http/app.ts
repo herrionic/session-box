@@ -6,6 +6,7 @@ import Fastify from "fastify";
 import { ZodError } from "zod";
 import { newRequestId } from "@sessionbox/shared";
 import type { AgentGateway } from "../agent/gateway.ts";
+import type { AuthService } from "../auth/service.ts";
 import type { ServerConfig } from "../config.ts";
 import { SessionBoxError, isSessionBoxError } from "../errors.ts";
 import type { ContainerFilesService } from "../files/service.ts";
@@ -14,6 +15,7 @@ import type { ContainerRuntime } from "../runtime/types.ts";
 import type { ContainerService } from "../container/service.ts";
 import { createAuthHook } from "./auth.ts";
 import { registerAgentRoutes } from "./routes/agent.ts";
+import { registerAuthRoutes } from "./routes/auth.ts";
 import { registerFileRoutes } from "./routes/files.ts";
 import { registerHealthRoutes } from "./routes/health.ts";
 import { registerContainerRoutes } from "./routes/containers.ts";
@@ -27,6 +29,8 @@ export interface AppDependencies {
   service: ContainerService;
   files: ContainerFilesService;
   gateway: AgentGateway;
+  /** Single-owner user system; absent in tests that only exercise the API. */
+  auth?: AuthService;
 }
 
 export async function buildApp(deps: AppDependencies): Promise<SessionBoxApp> {
@@ -96,10 +100,19 @@ export async function buildApp(deps: AppDependencies): Promise<SessionBoxApp> {
   // WebSocket support must be registered before the websocket routes.
   await app.register(websocket);
 
-  // Bearer authentication runs before every route (health stays open).
-  app.addHook("onRequest", createAuthHook(deps.config.auth));
+  // Authentication runs before every route (health and login stay open).
+  app.addHook(
+    "onRequest",
+    createAuthHook({
+      config: deps.config.auth,
+      ...(deps.auth !== undefined ? { auth: deps.auth } : {}),
+    }),
+  );
 
   registerHealthRoutes(app, { config: deps.config, runtime: deps.runtime });
+  if (deps.auth !== undefined) {
+    registerAuthRoutes(app, { auth: deps.auth });
+  }
   registerContainerRoutes(app, { service: deps.service });
   registerFileRoutes(app, { files: deps.files });
   registerTerminalRoutes(app, { service: deps.service });
