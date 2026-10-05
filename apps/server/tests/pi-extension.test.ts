@@ -6,11 +6,11 @@ import sessionboxExtension from "@sessionbox/pi-plugin";
 import { AgentGateway } from "../src/agent/gateway.ts";
 import type { ServerConfig } from "../src/config.ts";
 import { InMemoryCredentialStore } from "../src/credentials/store.ts";
-import { SandboxFilesService } from "../src/files/service.ts";
+import { ContainerFilesService } from "../src/files/service.ts";
 import { buildApp } from "../src/http/app.ts";
 import type { SessionBoxApp } from "../src/http/types.ts";
-import { InMemorySandboxRepository } from "../src/sandbox/repository.ts";
-import { SandboxService } from "../src/sandbox/service.ts";
+import { InMemoryContainerRepository } from "../src/container/repository.ts";
+import { ContainerService } from "../src/container/service.ts";
 import { SshSessionManager } from "../src/ssh/manager.ts";
 import { FakeRuntime } from "./helpers/fake-runtime.ts";
 import { FakeSshSessionFactory } from "./helpers/fake-ssh.ts";
@@ -95,10 +95,10 @@ interface Fixture {
 async function createFixture(): Promise<Fixture> {
   const runtime = new FakeRuntime();
   const logger = createTestLogger();
-  const ssh = new FakeSshSessionFactory({ perSandbox: true });
-  const service = new SandboxService({
+  const ssh = new FakeSshSessionFactory({ perContainer: true });
+  const service = new ContainerService({
     runtime,
-    repository: new InMemorySandboxRepository(),
+    repository: new InMemoryContainerRepository(),
     credentials: new InMemoryCredentialStore(Buffer.alloc(32, 13)),
     ssh,
     sessions: new SshSessionManager(ssh, logger),
@@ -109,8 +109,8 @@ async function createFixture(): Promise<Fixture> {
     sshRetryIntervalMs: 1,
     sleep: async () => {},
   });
-  const files = new SandboxFilesService({
-    sandboxes: service,
+  const files = new ContainerFilesService({
+    containers: service,
     workspace: testConfig.docker.workspace,
     logger,
   });
@@ -178,7 +178,7 @@ function createMockContext(
 }
 
 describe("Pi extension against a real SessionBox server", () => {
-  it("routes tools into the sandbox, reuses the binding and survives shutdown", async () => {
+  it("routes tools into the container, reuses the binding and survives shutdown", async () => {
     const { app, ssh, baseUrl, workspaceDir, bindingsDir } = await createFixture();
     cleanups.push(() => app.close());
     cleanups.push(() => rm(workspaceDir, { recursive: true, force: true }));
@@ -197,14 +197,14 @@ describe("Pi extension against a real SessionBox server", () => {
     await start?.({ type: "session_start", reason: "startup" }, ctx);
     expect(setStatus).toHaveBeenCalled();
 
-    const sandboxes = (await (await fetch(`${baseUrl}/api/sandboxes`)).json()) as Array<{
+    const containers = (await (await fetch(`${baseUrl}/api/containers`)).json()) as Array<{
       id: string;
     }>;
-    expect(sandboxes).toHaveLength(1);
-    const sandboxId = sandboxes[0]?.id ?? "";
-    const session = ssh.sessionFor(sandboxId);
+    expect(containers).toHaveLength(1);
+    const containerId = containers[0]?.id ?? "";
+    const session = ssh.sessionFor(containerId);
 
-    // bash routes into the sandbox and streams the scripted output back
+    // bash routes into the container and streams the scripted output back
     session.execResults.push({ exitCode: 0, stdout: "AAA\n", stderr: "" });
     const bash = tools.get("bash");
     const bashResult = await bash?.execute("t1", { command: "cat /workspace/who.txt" });
@@ -224,19 +224,19 @@ describe("Pi extension against a real SessionBox server", () => {
     const ls = tools.get("ls");
     expect(JSON.stringify(await ls?.execute("t4", { path: workspaceDir }))).toContain("notes.txt");
 
-    // the same Pi session reuses its sandbox
+    // the same Pi session reuses its container
     await start?.({ type: "session_start", reason: "reload" }, ctx);
-    const afterReload = (await (await fetch(`${baseUrl}/api/sandboxes`)).json()) as unknown[];
+    const afterReload = (await (await fetch(`${baseUrl}/api/containers`)).json()) as unknown[];
     expect(afterReload).toHaveLength(1);
 
-    // shutdown only closes the connection; the sandbox keeps running
+    // shutdown only closes the connection; the container keeps running
     const shutdown = handlers.get("session_shutdown")?.[0];
     await shutdown?.({ type: "session_shutdown", reason: "quit" }, ctx);
 
-    const sandbox = (await (
-      await fetch(`${baseUrl}/api/sandboxes/${sandboxId}`)
+    const container = (await (
+      await fetch(`${baseUrl}/api/containers/${containerId}`)
     ).json()) as { status: string };
-    expect(sandbox.status).toBe("running");
+    expect(container.status).toBe("running");
   });
 
   it("fails closed when the SessionBox server is unreachable", async () => {
@@ -277,8 +277,8 @@ describe("Pi extension against a real SessionBox server", () => {
 
     expect(notify).toHaveBeenCalledWith(expect.stringContaining("disabled"), "info");
 
-    const sandboxes = (await (await fetch(`${baseUrl}/api/sandboxes`)).json()) as unknown[];
-    expect(sandboxes).toHaveLength(0);
+    const containers = (await (await fetch(`${baseUrl}/api/containers`)).json()) as unknown[];
+    expect(containers).toHaveLength(0);
 
     const bash = tools.get("bash");
     await expect(bash?.execute("t1", { command: "echo hi" })).rejects.toThrow(/not connected/);

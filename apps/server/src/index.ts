@@ -9,19 +9,19 @@ export { authenticate, hasPermission, PERMISSIONS, requirePermission, type Princ
 export { parseMasterKey } from "./credentials/master-key.ts";
 export { EncryptedCredentialStore, InMemoryCredentialStore, type CredentialStore } from "./credentials/store.ts";
 export { buildApp, type AppDependencies } from "./http/app.ts";
-export { SandboxFilesService, type SandboxFilesServiceOptions } from "./files/service.ts";
+export { ContainerFilesService, type ContainerFilesServiceOptions } from "./files/service.ts";
 export { LifecycleService, type LifecycleServiceOptions } from "./lifecycle/service.ts";
 export { createLogger, redactToken } from "./logging.ts";
 export { createRuntime } from "./runtime/index.ts";
-export { InMemorySandboxRepository, type SandboxRepository } from "./sandbox/repository.ts";
-export { SandboxService, type SandboxServiceOptions } from "./sandbox/service.ts";
-export { toPublicSandbox, type SandboxRecord } from "./sandbox/types.ts";
+export { InMemoryContainerRepository, type ContainerRepository } from "./container/repository.ts";
+export { ContainerService, type ContainerServiceOptions } from "./container/service.ts";
+export { toPublicContainer, type ContainerRecord } from "./container/types.ts";
 export { openDatabase, SCHEMA_VERSION } from "./storage/database.ts";
-export { SqliteSandboxRepository } from "./storage/sandbox-repository.ts";
+export { SqliteContainerRepository } from "./storage/container-repository.ts";
 export { InMemorySecretRepository, SqliteSecretRepository, type SecretRepository } from "./storage/secret-repository.ts";
 export { generateSshKeyPair, SSH_PRIVATE_KEY_CREDENTIAL } from "./ssh/keypair.ts";
 export { SshSessionManager } from "./ssh/manager.ts";
-export { isWithinWorkspace, normalizeSandboxPath, resolveWithinWorkspace } from "./ssh/paths.ts";
+export { isWithinWorkspace, normalizeContainerPath, resolveWithinWorkspace } from "./ssh/paths.ts";
 export { waitForSsh } from "./ssh/readiness.ts";
 export {
   SshError,

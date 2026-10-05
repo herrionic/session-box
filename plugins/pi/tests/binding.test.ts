@@ -3,21 +3,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SessionBoxClientError, type SessionBoxClient } from "@sessionbox/client";
-import { readBindings, resolveSandboxId, writeBindings } from "../src/binding.ts";
+import { readBindings, resolveContainerId, writeBindings } from "../src/binding.ts";
 
 class FakeClient {
   readonly existing = new Set<string>();
   readonly createdNames: string[] = [];
   private counter = 0;
 
-  async getSandbox(id: string): Promise<{ id: string }> {
+  async getContainer(id: string): Promise<{ id: string }> {
     if (this.existing.has(id)) return { id };
-    throw new SessionBoxClientError("SANDBOX_NOT_FOUND", `sandbox ${id} was not found`);
+    throw new SessionBoxClientError("CONTAINER_NOT_FOUND", `container ${id} was not found`);
   }
 
-  async createSandbox(input: { name?: string } = {}): Promise<{ id: string }> {
+  async createContainer(input: { name?: string } = {}): Promise<{ id: string }> {
     this.counter += 1;
-    const id = `sbx_test_${this.counter}`;
+    const id = `ctr_test_${this.counter}`;
     this.existing.add(id);
     if (input.name !== undefined) this.createdNames.push(input.name);
     return { id };
@@ -43,73 +43,73 @@ function client(fake: FakeClient): SessionBoxClient {
   return fake as unknown as SessionBoxClient;
 }
 
-describe("resolveSandboxId", () => {
-  it("creates a sandbox and persists the binding", async () => {
+describe("resolveContainerId", () => {
+  it("creates a container and persists the binding", async () => {
     const fake = new FakeClient();
     const file = await tempBindingsFile();
 
-    const sandboxId = await resolveSandboxId({
+    const containerId = await resolveContainerId({
       client: client(fake),
       sessionId: "ses_1",
       bindingsFile: file,
-      sandboxName: "pi-ses1",
+      containerName: "pi-ses1",
       now: () => "2026-10-04T00:00:00.000Z",
     });
 
-    expect(sandboxId).toBe("sbx_test_1");
+    expect(containerId).toBe("ctr_test_1");
     expect(fake.createdNames).toEqual(["pi-ses1"]);
     await expect(readBindings(file)).resolves.toEqual({
-      ses_1: { sandboxId: "sbx_test_1", updatedAt: "2026-10-04T00:00:00.000Z" },
+      ses_1: { containerId: "ctr_test_1", updatedAt: "2026-10-04T00:00:00.000Z" },
     });
   });
 
-  it("reuses a live binding without creating another sandbox", async () => {
+  it("reuses a live binding without creating another container", async () => {
     const fake = new FakeClient();
     const file = await tempBindingsFile();
-    await writeBindings(file, { ses_1: { sandboxId: "sbx_existing", updatedAt: "x" } });
-    fake.existing.add("sbx_existing");
+    await writeBindings(file, { ses_1: { containerId: "ctr_existing", updatedAt: "x" } });
+    fake.existing.add("ctr_existing");
 
-    const sandboxId = await resolveSandboxId({
+    const containerId = await resolveContainerId({
       client: client(fake),
       sessionId: "ses_1",
       bindingsFile: file,
-      sandboxName: "pi-ses1",
+      containerName: "pi-ses1",
     });
 
-    expect(sandboxId).toBe("sbx_existing");
+    expect(containerId).toBe("ctr_existing");
     expect(fake.createdNames).toEqual([]);
   });
 
-  it("recreates the sandbox when the bound one disappeared", async () => {
+  it("recreates the container when the bound one disappeared", async () => {
     const fake = new FakeClient();
     const file = await tempBindingsFile();
-    await writeBindings(file, { ses_1: { sandboxId: "sbx_gone", updatedAt: "x" } });
+    await writeBindings(file, { ses_1: { containerId: "ctr_gone", updatedAt: "x" } });
 
-    const sandboxId = await resolveSandboxId({
+    const containerId = await resolveContainerId({
       client: client(fake),
       sessionId: "ses_1",
       bindingsFile: file,
-      sandboxName: "pi-ses1",
+      containerName: "pi-ses1",
     });
 
-    expect(sandboxId).toBe("sbx_test_1");
-    expect((await readBindings(file)).ses_1?.sandboxId).toBe("sbx_test_1");
+    expect(containerId).toBe("ctr_test_1");
+    expect((await readBindings(file)).ses_1?.containerId).toBe("ctr_test_1");
   });
 
-  it("honours a pinned sandbox without touching the binding file", async () => {
+  it("honours a pinned container without touching the binding file", async () => {
     const fake = new FakeClient();
-    fake.existing.add("sbx_pinned");
+    fake.existing.add("ctr_pinned");
     const file = await tempBindingsFile();
 
-    const sandboxId = await resolveSandboxId({
+    const containerId = await resolveContainerId({
       client: client(fake),
       sessionId: "ses_1",
       bindingsFile: file,
-      sandboxName: "pi-ses1",
-      pinnedSandboxId: "sbx_pinned",
+      containerName: "pi-ses1",
+      pinnedContainerId: "ctr_pinned",
     });
 
-    expect(sandboxId).toBe("sbx_pinned");
+    expect(containerId).toBe("ctr_pinned");
     await expect(readBindings(file)).resolves.toEqual({});
   });
 
@@ -118,14 +118,14 @@ describe("resolveSandboxId", () => {
     const file = await tempBindingsFile();
     await writeFile(file, "{ not json", "utf8");
 
-    const sandboxId = await resolveSandboxId({
+    const containerId = await resolveContainerId({
       client: client(fake),
       sessionId: "ses_1",
       bindingsFile: file,
-      sandboxName: "pi-ses1",
+      containerName: "pi-ses1",
     });
 
-    expect(sandboxId).toBe("sbx_test_1");
-    await expect(readFile(file, "utf8")).resolves.toContain("sbx_test_1");
+    expect(containerId).toBe("ctr_test_1");
+    await expect(readFile(file, "utf8")).resolves.toContain("ctr_test_1");
   });
 });

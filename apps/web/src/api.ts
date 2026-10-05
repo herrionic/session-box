@@ -1,11 +1,11 @@
 import type {
-  CreateSandboxRequest,
+  CreateContainerRequest,
   ErrorResponse,
   FileContent,
   FileEntry,
   FileListResponse,
-  Sandbox,
-  UpdateSandboxSettingsRequest,
+  Container,
+  UpdateContainerSettingsRequest,
 } from "@sessionbox/protocol";
 
 export class ApiError extends Error {
@@ -66,54 +66,54 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  list: (): Promise<Sandbox[]> => request("/api/sandboxes"),
+  list: (): Promise<Container[]> => request("/api/containers"),
 
-  get: (id: string): Promise<Sandbox> => request(`/api/sandboxes/${id}`),
+  get: (id: string): Promise<Container> => request(`/api/containers/${id}`),
 
-  create: (input: CreateSandboxRequest): Promise<Sandbox> =>
-    request("/api/sandboxes", { method: "POST", body: JSON.stringify(input) }),
+  create: (input: CreateContainerRequest): Promise<Container> =>
+    request("/api/containers", { method: "POST", body: JSON.stringify(input) }),
 
-  start: (id: string): Promise<Sandbox> =>
-    request(`/api/sandboxes/${id}/start`, { method: "POST" }),
+  start: (id: string): Promise<Container> =>
+    request(`/api/containers/${id}/start`, { method: "POST" }),
 
-  stop: (id: string): Promise<Sandbox> =>
-    request(`/api/sandboxes/${id}/stop`, { method: "POST" }),
+  stop: (id: string): Promise<Container> =>
+    request(`/api/containers/${id}/stop`, { method: "POST" }),
 
-  restart: (id: string): Promise<Sandbox> =>
-    request(`/api/sandboxes/${id}/restart`, { method: "POST" }),
+  restart: (id: string): Promise<Container> =>
+    request(`/api/containers/${id}/restart`, { method: "POST" }),
 
-  remove: (id: string): Promise<void> => request(`/api/sandboxes/${id}`, { method: "DELETE" }),
+  remove: (id: string): Promise<void> => request(`/api/containers/${id}`, { method: "DELETE" }),
 
-  updateSettings: (id: string, patch: UpdateSandboxSettingsRequest): Promise<Sandbox> =>
-    request(`/api/sandboxes/${id}/settings`, { method: "PATCH", body: JSON.stringify(patch) }),
+  updateSettings: (id: string, patch: UpdateContainerSettingsRequest): Promise<Container> =>
+    request(`/api/containers/${id}/settings`, { method: "PATCH", body: JSON.stringify(patch) }),
 
   listFiles: (id: string, path: string): Promise<FileListResponse> =>
-    request(`/api/sandboxes/${id}/files?path=${encodeURIComponent(path)}`),
+    request(`/api/containers/${id}/files?path=${encodeURIComponent(path)}`),
 
   readFile: (id: string, path: string): Promise<FileContent> =>
-    request(`/api/sandboxes/${id}/files/content?path=${encodeURIComponent(path)}`),
+    request(`/api/containers/${id}/files/content?path=${encodeURIComponent(path)}`),
 
   writeFile: (id: string, path: string, content: string): Promise<FileContent> =>
-    request(`/api/sandboxes/${id}/files/content`, {
+    request(`/api/containers/${id}/files/content`, {
       method: "PUT",
       body: JSON.stringify({ path, content }),
     }),
 
   createFile: (id: string, path: string, type: "file" | "directory"): Promise<FileEntry> =>
-    request(`/api/sandboxes/${id}/files`, {
+    request(`/api/containers/${id}/files`, {
       method: "POST",
       body: JSON.stringify({ path, type }),
     }),
 
   removeFile: (id: string, path: string, recursive = false): Promise<void> =>
     request(
-      `/api/sandboxes/${id}/files?path=${encodeURIComponent(path)}${recursive ? "&recursive=true" : ""}`,
+      `/api/containers/${id}/files?path=${encodeURIComponent(path)}${recursive ? "&recursive=true" : ""}`,
       { method: "DELETE" },
     ),
 
   uploadFile: async (id: string, path: string, file: File): Promise<FileEntry> => {
     const response = await fetch(
-      `/api/sandboxes/${id}/files/upload?path=${encodeURIComponent(path)}`,
+      `/api/containers/${id}/files/upload?path=${encodeURIComponent(path)}`,
       {
         method: "POST",
         headers: { "content-type": "application/octet-stream", ...authHeaders() },
@@ -125,7 +125,7 @@ export const api = {
   },
 
   downloadUrl: (id: string, path: string): string =>
-    `/api/sandboxes/${id}/files/download?${buildQuery({ path })}`,
+    `/api/containers/${id}/files/download?${buildQuery({ path })}`,
 
   terminalUrl: (id: string, params?: { cols?: number; rows?: number }): string =>
     `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/api/ws/terminal/${id}?${buildQuery(

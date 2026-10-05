@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { SessionBoxClientError, type SandboxRuntime } from "@sessionbox/client";
+import { SessionBoxClientError, type ContainerRuntime } from "@sessionbox/client";
 import {
   createBashOperations,
   createEditOperations,
@@ -12,7 +12,7 @@ import {
 const HOST_CWD = process.platform === "win32" ? "D:\\work\\project" : "/home/user/project";
 
 function createFixture(): {
-  context: { runtime: () => SandboxRuntime; hostCwd: () => string; sandboxRoot: string };
+  context: { runtime: () => ContainerRuntime; hostCwd: () => string; containerRoot: string };
   runtime: {
     exec: ReturnType<typeof vi.fn>;
     writeFile: ReturnType<typeof vi.fn>;
@@ -61,9 +61,9 @@ function createFixture(): {
 
   return {
     context: {
-      runtime: () => runtime as unknown as SandboxRuntime,
+      runtime: () => runtime as unknown as ContainerRuntime,
       hostCwd: () => HOST_CWD,
-      sandboxRoot: "/workspace",
+      containerRoot: "/workspace",
     },
     runtime,
     files,
@@ -111,7 +111,7 @@ describe("bash operations", () => {
 });
 
 describe("file operations", () => {
-  it("maps host paths into the sandbox for read, write and mkdir", async () => {
+  it("maps host paths into the container for read, write and mkdir", async () => {
     const { context, files, runtime } = createFixture();
     const read = createReadOperations(context);
     const write = createWriteOperations(context);

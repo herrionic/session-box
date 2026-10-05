@@ -13,7 +13,7 @@ describe("generateSshKeyPair", () => {
     expect(Array.isArray(parsed)).toBe(false);
   });
 
-  it("derives the same public key that is injected into the sandbox", () => {
+  it("derives the same public key that is injected into the container", () => {
     const pair = generateSshKeyPair();
     const parsed = utils.parseKey(pair.privateKey);
 

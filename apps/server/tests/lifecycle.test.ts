@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { InMemoryCredentialStore } from "../src/credentials/store.ts";
 import { LifecycleService } from "../src/lifecycle/service.ts";
-import { InMemorySandboxRepository } from "../src/sandbox/repository.ts";
-import { SandboxService } from "../src/sandbox/service.ts";
+import { InMemoryContainerRepository } from "../src/container/repository.ts";
+import { ContainerService } from "../src/container/service.ts";
 import { SshSessionManager } from "../src/ssh/manager.ts";
 import { FakeRuntime } from "./helpers/fake-runtime.ts";
 import { FakeSshSessionFactory } from "./helpers/fake-ssh.ts";
 import { createTestLogger } from "./helpers/test-logger.ts";
 
 function createFixture(): {
-  service: SandboxService;
+  service: ContainerService;
   runtime: FakeRuntime;
   lifecycle: LifecycleService;
   setNow: (value: number) => void;
@@ -20,9 +20,9 @@ function createFixture(): {
 
   let now = Date.now();
 
-  const service = new SandboxService({
+  const service = new ContainerService({
     runtime,
-    repository: new InMemorySandboxRepository(),
+    repository: new InMemoryContainerRepository(),
     credentials: new InMemoryCredentialStore(Buffer.alloc(32, 21)),
     ssh,
     sessions: new SshSessionManager(ssh, logger),
@@ -36,7 +36,7 @@ function createFixture(): {
   });
 
   const lifecycle = new LifecycleService({
-    sandboxes: service,
+    containers: service,
     logger,
     now: () => now,
   });
@@ -52,7 +52,7 @@ function createFixture(): {
 }
 
 describe("LifecycleService", () => {
-  it("auto-stops an idle sandbox after the idle timeout", async () => {
+  it("auto-stops an idle container after the idle timeout", async () => {
     const { service, runtime, lifecycle, setNow } = createFixture();
     const record = await service.create({
       lifecycle: { autoStop: true, idleTimeoutSeconds: 60 },
@@ -65,7 +65,7 @@ describe("LifecycleService", () => {
     expect(runtime.containers.get(record.runtimeRef!)?.status).toBe("stopped");
   });
 
-  it("keeps a sandbox alive while a connection is active", async () => {
+  it("keeps a container alive while a connection is active", async () => {
     const { service, lifecycle, setNow } = createFixture();
     const record = await service.create({
       lifecycle: { autoStop: true, idleTimeoutSeconds: 60 },
@@ -78,7 +78,7 @@ describe("LifecycleService", () => {
     expect((await service.get(record.id)).status).toBe("running");
   });
 
-  it("auto-stops a sandbox that exceeded its maximum lifetime", async () => {
+  it("auto-stops a container that exceeded its maximum lifetime", async () => {
     const { service, lifecycle, setNow } = createFixture();
     const record = await service.create({
       lifecycle: { autoStop: true, maxLifetimeSeconds: 30 },
@@ -90,7 +90,7 @@ describe("LifecycleService", () => {
     expect((await service.get(record.id)).status).toBe("stopped");
   });
 
-  it("deletes the sandbox after stopping when configured", async () => {
+  it("deletes the container after stopping when configured", async () => {
     const { service, runtime, lifecycle, setNow } = createFixture();
     const record = await service.create({
       lifecycle: { autoStop: true, idleTimeoutSeconds: 10, deleteAfterStop: true },
@@ -100,7 +100,7 @@ describe("LifecycleService", () => {
     setNow(Date.now() + 11_000);
     await lifecycle.runOnce();
 
-    await expect(service.get(record.id)).rejects.toMatchObject({ code: "SANDBOX_NOT_FOUND" });
+    await expect(service.get(record.id)).rejects.toMatchObject({ code: "CONTAINER_NOT_FOUND" });
     expect(runtime.containers.has(ref!)).toBe(false);
   });
 

@@ -4,10 +4,10 @@ import { SshError } from "../src/ssh/session.ts";
 import { FakeSshSessionFactory } from "./helpers/fake-ssh.ts";
 import { createTestLogger } from "./helpers/test-logger.ts";
 
-const request = { sandboxId: "sbx_1", runtimeRef: "ref_1" };
+const request = { containerId: "ctr_1", runtimeRef: "ref_1" };
 
 describe("SshSessionManager", () => {
-  it("caches one session per sandbox", async () => {
+  it("caches one session per container", async () => {
     const factory = new FakeSshSessionFactory();
     const createSpy = vi.spyOn(factory, "create");
     const manager = new SshSessionManager(factory, createTestLogger());
@@ -51,7 +51,7 @@ describe("SshSessionManager", () => {
     const manager = new SshSessionManager(factory, createTestLogger());
 
     await manager.get(request);
-    await manager.release("sbx_1");
+    await manager.release("ctr_1");
 
     expect(factory.session.closed).toBe(true);
 

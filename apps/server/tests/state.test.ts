@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { SandboxStatus } from "@sessionbox/protocol";
+import type { ContainerStatus } from "@sessionbox/protocol";
 import { SessionBoxError } from "../src/errors.ts";
-import { ALLOWED_STATUSES, assertOperationAllowed, type SandboxOperation } from "../src/sandbox/state.ts";
+import { ALLOWED_STATUSES, assertOperationAllowed, type ContainerOperation } from "../src/container/state.ts";
 
-const ALL_STATUSES: SandboxStatus[] = ["creating", "running", "stopped", "failed", "deleting"];
+const ALL_STATUSES: ContainerStatus[] = ["creating", "running", "stopped", "failed", "deleting"];
 
-describe("sandbox state machine", () => {
+describe("container state machine", () => {
   it("documents the full transition matrix", () => {
     expect(ALLOWED_STATUSES).toEqual({
       start: ["stopped", "failed"],
@@ -15,7 +15,7 @@ describe("sandbox state machine", () => {
     });
   });
 
-  it.each<[SandboxOperation, SandboxStatus, boolean]>([
+  it.each<[ContainerOperation, ContainerStatus, boolean]>([
     ["start", "stopped", true],
     ["start", "failed", true],
     ["start", "running", false],

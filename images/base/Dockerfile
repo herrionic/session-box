@@ -1,4 +1,4 @@
-# SessionBox sandbox base image.
+# SessionBox container base image.
 #
 # - non-root "agent" user for all agent and human work
 # - sshd is the only service; it starts as root and drops to "agent" per session
@@ -36,7 +36,7 @@ RUN useradd --create-home --shell /bin/bash --uid 1000 agent \
 COPY sshd-sessionbox.conf /etc/ssh/sshd_config.d/100-sessionbox.conf
 
 # Fail the build if the sshd configuration is broken. Host keys are generated
-# for validation only and removed again so every sandbox gets unique ones.
+# for validation only and removed again so every container gets unique ones.
 RUN mkdir -p /run/sshd \
  && ssh-keygen -A \
  && sshd -t \

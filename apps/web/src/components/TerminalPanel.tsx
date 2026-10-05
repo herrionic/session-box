@@ -7,7 +7,7 @@ import { api } from "../api.ts";
 
 type ConnectionState = "connecting" | "connected" | "closed" | "error";
 
-export function TerminalPanel({ sandboxId }: { sandboxId: string }): JSX.Element {
+export function TerminalPanel({ containerId }: { containerId: string }): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
@@ -23,7 +23,7 @@ export function TerminalPanel({ sandboxId }: { sandboxId: string }): JSX.Element
     setError(null);
 
     const socket = new WebSocket(
-      api.terminalUrl(sandboxId, { cols: term.cols, rows: term.rows }),
+      api.terminalUrl(containerId, { cols: term.cols, rows: term.rows }),
     );
     socketRef.current = socket;
 
@@ -50,7 +50,7 @@ export function TerminalPanel({ sandboxId }: { sandboxId: string }): JSX.Element
     };
     socket.onclose = () => setState((current) => (current === "error" ? current : "closed"));
     socket.onerror = () => setState("error");
-  }, [sandboxId]);
+  }, [containerId]);
 
   useEffect(() => {
     const container = containerRef.current;

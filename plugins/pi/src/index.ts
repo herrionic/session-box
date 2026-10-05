@@ -8,8 +8,8 @@ import {
   createWriteTool,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { SessionBoxClient, type SandboxRuntime } from "@sessionbox/client";
-import { resolveSandboxId } from "./binding.ts";
+import { SessionBoxClient, type ContainerRuntime } from "@sessionbox/client";
+import { resolveContainerId } from "./binding.ts";
 import { loadConfig, type SessionBoxPluginConfig } from "./config.ts";
 import {
   createBashOperations,
@@ -18,12 +18,12 @@ import {
   createReadOperations,
   createWriteOperations,
 } from "./operations.ts";
-import { DEFAULT_SANDBOX_ROOT } from "./paths.ts";
+import { DEFAULT_CONTAINER_ROOT } from "./paths.ts";
 
 /**
  * SessionBox extension for Pi.
  *
- * A Pi session gets its own sandbox; the native bash/read/write/edit/ls tools
+ * A Pi session gets its own container; the native bash/read/write/edit/ls tools
  * are re-registered with operations that execute inside it, so the model sees
  * exactly the same tool set while everything runs remotely (PROJECT.md §30).
  *
@@ -32,25 +32,25 @@ import { DEFAULT_SANDBOX_ROOT } from "./paths.ts";
  */
 export default function sessionboxExtension(pi: ExtensionAPI): void {
   pi.registerFlag("no-sessionbox", {
-    description: "Run Pi tools on the host instead of inside a SessionBox sandbox",
+    description: "Run Pi tools on the host instead of inside a SessionBox container",
     type: "boolean",
     default: false,
   });
 
   const state: {
-    runtime: SandboxRuntime | null;
-    sandboxId: string | null;
+    runtime: ContainerRuntime | null;
+    containerId: string | null;
     hostCwd: string;
     config: SessionBoxPluginConfig | null;
   } = {
     runtime: null,
-    sandboxId: null,
+    containerId: null,
     hostCwd: process.cwd(),
     config: null,
   };
 
   const context = {
-    runtime: (): SandboxRuntime => {
+    runtime: (): ContainerRuntime => {
       if (state.runtime === null) {
         throw new Error(
           "SessionBox is not connected for this session; check SESSIONBOX_URL and the extension status",
@@ -59,7 +59,7 @@ export default function sessionboxExtension(pi: ExtensionAPI): void {
       return state.runtime;
     },
     hostCwd: () => state.hostCwd,
-    sandboxRoot: DEFAULT_SANDBOX_ROOT,
+    containerRoot: DEFAULT_CONTAINER_ROOT,
   };
 
   const bash = createBashOperations(context);
@@ -75,7 +75,7 @@ export default function sessionboxExtension(pi: ExtensionAPI): void {
   pi.registerTool(createEditTool(localCwd, { operations: edit }));
   pi.registerTool(createLsTool(localCwd, { operations: ls }));
 
-  // User-issued shell commands (`!cmd`) run in the sandbox too.
+  // User-issued shell commands (`!cmd`) run in the container too.
   pi.on("user_bash", () => (state.runtime !== null ? { operations: bash } : undefined));
 
   pi.on("session_start", async (_event, ctx) => {
@@ -99,23 +99,23 @@ export default function sessionboxExtension(pi: ExtensionAPI): void {
 
     try {
       const sessionId = ctx.sessionManager.getSessionId();
-      const sandboxId = await resolveSandboxId({
+      const containerId = await resolveContainerId({
         client,
         sessionId,
         bindingsFile:
           config.bindingsFile ??
           path.join(getAgentDir(), "extensions", "sessionbox", "bindings.json"),
-        sandboxName: `pi-${sessionId.slice(0, 8)}`,
-        ...(config.pinnedSandboxId !== undefined
-          ? { pinnedSandboxId: config.pinnedSandboxId }
+        containerName: `pi-${sessionId.slice(0, 8)}`,
+        ...(config.pinnedContainerId !== undefined
+          ? { pinnedContainerId: config.pinnedContainerId }
           : {}),
       });
 
-      state.runtime = await client.connect(sandboxId);
-      state.sandboxId = sandboxId;
+      state.runtime = await client.connect(containerId);
+      state.containerId = containerId;
 
-      ctx.ui.setStatus("sessionbox", `SessionBox: ${sandboxId}`);
-      ctx.ui.notify(`SessionBox sandbox ready: ${sandboxId}`, "info");
+      ctx.ui.setStatus("sessionbox", `SessionBox: ${containerId}`);
+      ctx.ui.notify(`SessionBox container ready: ${containerId}`, "info");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       ctx.ui.notify(`SessionBox unavailable: ${message}`, "error");
@@ -127,13 +127,13 @@ export default function sessionboxExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("sessionbox", {
-    description: "Show the SessionBox sandbox bound to this session",
+    description: "Show the SessionBox container bound to this session",
     handler: async (_args, ctx) => {
-      if (state.sandboxId === null) {
+      if (state.containerId === null) {
         ctx.ui.notify(
           state.config?.disabled === true
             ? "SessionBox is disabled"
-            : "No SessionBox sandbox is bound to this session",
+            : "No SessionBox container is bound to this session",
           "warning",
         );
         return;
@@ -141,9 +141,9 @@ export default function sessionboxExtension(pi: ExtensionAPI): void {
 
       ctx.ui.notify(
         [
-          `sandbox: ${state.sandboxId}`,
+          `container: ${state.containerId}`,
           `server: ${state.config?.baseUrl ?? "(unknown)"}`,
-          `workspace: ${DEFAULT_SANDBOX_ROOT}`,
+          `workspace: ${DEFAULT_CONTAINER_ROOT}`,
         ].join("\n"),
         "info",
       );
@@ -153,7 +153,7 @@ export default function sessionboxExtension(pi: ExtensionAPI): void {
   async function disconnect(): Promise<void> {
     const runtime = state.runtime;
     state.runtime = null;
-    state.sandboxId = null;
+    state.containerId = null;
 
     if (runtime !== null) {
       try {

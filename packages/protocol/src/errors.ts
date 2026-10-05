@@ -5,9 +5,9 @@ import { z } from "zod";
  * detailed internal errors stay in server logs.
  */
 export const ErrorCodeSchema = z.enum([
-  "SANDBOX_NOT_FOUND",
-  "SANDBOX_NOT_RUNNING",
-  "SANDBOX_CREATE_FAILED",
+  "CONTAINER_NOT_FOUND",
+  "CONTAINER_NOT_RUNNING",
+  "CONTAINER_CREATE_FAILED",
   "SSH_UNAVAILABLE",
   "UNAUTHORIZED",
   "FORBIDDEN",

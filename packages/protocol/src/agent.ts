@@ -3,7 +3,7 @@ import { ErrorCodeSchema } from "./errors.ts";
 import { FileContentSchema, FileEntrySchema, FileMetadataSchema } from "./files.ts";
 
 /** MVP protocol version (PROJECT.md §40). */
-export const AGENT_PROTOCOL_VERSION = 1;
+export const AGENT_PROTOCOL_VERSION = 2;
 
 /** Client → server handshake. */
 export const AgentHelloSchema = z.strictObject({
@@ -24,7 +24,7 @@ export type AgentWelcome = z.infer<typeof AgentWelcomeSchema>;
 
 const requestBase = {
   requestId: z.string().min(1).max(128),
-  sandboxId: z.string().min(1).max(128),
+  containerId: z.string().min(1).max(128),
 };
 
 const pathSchema = z.string().min(1).max(4096);

@@ -48,7 +48,7 @@ describe("SessionBoxShell.resolve", () => {
 });
 
 describe("SessionBoxShell.execute", () => {
-  it("runs in the sandbox and projects a foreground result", async () => {
+  it("runs in the container and projects a foreground result", async () => {
     runtime.execResults.push({ exitCode: 0, stdout: "hi\n", stderr: "" });
 
     const execution = await shell.execute(shell.resolve({ command: "echo hi" }));
@@ -93,13 +93,13 @@ describe("SessionBoxShell.execute", () => {
   });
 
   it("keeps infrastructure failures on the result rejection path", async () => {
-    runtime.execError = new SessionBoxClientError("SSH_UNAVAILABLE", "sandbox is gone");
+    runtime.execError = new SessionBoxClientError("SSH_UNAVAILABLE", "container is gone");
 
     const execution = await shell.execute(shell.resolve({ command: "true" }));
 
-    await expect(execution.result()).rejects.toThrow(/sandbox is gone/);
+    await expect(execution.result()).rejects.toThrow(/container is gone/);
     await expect(execution.done).resolves.toBeUndefined();
-    expect(execution.readOutput().delta).toContain("sessionbox: sandbox is gone");
+    expect(execution.readOutput().delta).toContain("sessionbox: container is gone");
     expect(execution.kill()).toBe(false);
   });
 

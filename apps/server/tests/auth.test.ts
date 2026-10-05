@@ -4,11 +4,11 @@ import { loadAuthConfig } from "../src/auth/config.ts";
 import { authenticate, hasPermission, requirePermission } from "../src/auth/principals.ts";
 import type { ServerConfig } from "../src/config.ts";
 import { InMemoryCredentialStore } from "../src/credentials/store.ts";
-import { SandboxFilesService } from "../src/files/service.ts";
+import { ContainerFilesService } from "../src/files/service.ts";
 import { buildApp } from "../src/http/app.ts";
 import type { SessionBoxApp } from "../src/http/types.ts";
-import { InMemorySandboxRepository } from "../src/sandbox/repository.ts";
-import { SandboxService } from "../src/sandbox/service.ts";
+import { InMemoryContainerRepository } from "../src/container/repository.ts";
+import { ContainerService } from "../src/container/service.ts";
 import { SshSessionManager } from "../src/ssh/manager.ts";
 import { FakeRuntime } from "./helpers/fake-runtime.ts";
 import { FakeSshSessionFactory } from "./helpers/fake-ssh.ts";
@@ -16,7 +16,7 @@ import { createTestLogger } from "./helpers/test-logger.ts";
 
 const authConfig = loadAuthConfig(
   JSON.stringify([
-    { id: "dsh", token: "dsh-token", permissions: ["sandbox:read"] },
+    { id: "dsh", token: "dsh-token", permissions: ["container:read"] },
     { id: "admin", token: "admin-token", permissions: ["*"] },
   ]),
 );
@@ -44,7 +44,7 @@ describe("auth config and principals", () => {
     expect(principal).toEqual({
       id: "dsh",
       type: "plugin",
-      permissions: ["sandbox:read"],
+      permissions: ["container:read"],
     });
     expect(authenticate(authConfig, "nope")).toBeUndefined();
     expect(authenticate(authConfig, undefined)).toBeUndefined();
@@ -54,11 +54,11 @@ describe("auth config and principals", () => {
     const reader = authenticate(authConfig, "dsh-token");
     const admin = authenticate(authConfig, "admin-token");
 
-    expect(reader && hasPermission(reader, "sandbox:read")).toBe(true);
-    expect(reader && hasPermission(reader, "sandbox:delete")).toBe(false);
-    expect(admin && hasPermission(admin, "sandbox:delete")).toBe(true);
-    expect(() => requirePermission(undefined, "sandbox:read")).toThrow(/authentication/);
-    expect(() => requirePermission(reader, "sandbox:delete")).toThrow(/permission/);
+    expect(reader && hasPermission(reader, "container:read")).toBe(true);
+    expect(reader && hasPermission(reader, "container:delete")).toBe(false);
+    expect(admin && hasPermission(admin, "container:delete")).toBe(true);
+    expect(() => requirePermission(undefined, "container:read")).toThrow(/authentication/);
+    expect(() => requirePermission(reader, "container:delete")).toThrow(/permission/);
   });
 });
 
@@ -69,9 +69,9 @@ describe("HTTP authentication", () => {
     const runtime = new FakeRuntime();
     const logger = createTestLogger();
     const ssh = new FakeSshSessionFactory();
-    const service = new SandboxService({
+    const service = new ContainerService({
       runtime,
-      repository: new InMemorySandboxRepository(),
+      repository: new InMemoryContainerRepository(),
       credentials: new InMemoryCredentialStore(Buffer.alloc(32, 19)),
       ssh,
       sessions: new SshSessionManager(ssh, logger),
@@ -82,8 +82,8 @@ describe("HTTP authentication", () => {
       sshRetryIntervalMs: 1,
       sleep: async () => {},
     });
-    const files = new SandboxFilesService({
-      sandboxes: service,
+    const files = new ContainerFilesService({
+      containers: service,
       workspace: testConfig.docker.workspace,
       logger,
     });
@@ -97,7 +97,7 @@ describe("HTTP authentication", () => {
   });
 
   it("rejects requests without a token", async () => {
-    const response = await app.inject({ method: "GET", url: "/api/sandboxes" });
+    const response = await app.inject({ method: "GET", url: "/api/containers" });
 
     expect(response.statusCode).toBe(401);
     expect(response.json().error.code).toBe("UNAUTHORIZED");
@@ -106,7 +106,7 @@ describe("HTTP authentication", () => {
   it("rejects unknown tokens", async () => {
     const response = await app.inject({
       method: "GET",
-      url: "/api/sandboxes",
+      url: "/api/containers",
       headers: { authorization: "Bearer wrong" },
     });
 
@@ -116,7 +116,7 @@ describe("HTTP authentication", () => {
   it("accepts a valid bearer token", async () => {
     const response = await app.inject({
       method: "GET",
-      url: "/api/sandboxes",
+      url: "/api/containers",
       headers: { authorization: "Bearer dsh-token" },
     });
 
@@ -125,7 +125,7 @@ describe("HTTP authentication", () => {
   });
 
   it("accepts a token in the query string for WebSocket-style clients", async () => {
-    const response = await app.inject({ method: "GET", url: "/api/sandboxes?token=dsh-token" });
+    const response = await app.inject({ method: "GET", url: "/api/containers?token=dsh-token" });
 
     expect(response.statusCode).toBe(200);
   });
@@ -133,12 +133,12 @@ describe("HTTP authentication", () => {
   it("strips the query token before strict route schemas run", async () => {
     const response = await app.inject({
       method: "GET",
-      url: "/api/sandboxes/sbx_missing/files?path=%2Fworkspace&token=dsh-token",
+      url: "/api/containers/ctr_missing/files?path=%2Fworkspace&token=dsh-token",
     });
 
-    // The sandbox does not exist → 404; a strict-schema failure would be 400.
+    // The container does not exist → 404; a strict-schema failure would be 400.
     expect(response.statusCode).toBe(404);
-    expect(response.json().error.code).toBe("SANDBOX_NOT_FOUND");
+    expect(response.json().error.code).toBe("CONTAINER_NOT_FOUND");
   });
 
   it("keeps the health probe open", async () => {
@@ -150,7 +150,7 @@ describe("HTTP authentication", () => {
   it("enforces permissions", async () => {
     const forbidden = await app.inject({
       method: "POST",
-      url: "/api/sandboxes",
+      url: "/api/containers",
       headers: { authorization: "Bearer dsh-token" },
       payload: {},
     });
@@ -160,7 +160,7 @@ describe("HTTP authentication", () => {
 
     const allowed = await app.inject({
       method: "POST",
-      url: "/api/sandboxes",
+      url: "/api/containers",
       headers: { authorization: "Bearer admin-token" },
       payload: {},
     });

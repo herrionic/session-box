@@ -3,9 +3,9 @@
 #   cp .env.example .env   # set SESSIONBOX_MASTER_KEY
 #   docker compose up -d --build
 #
-# The server manages sandbox containers on this host through the mounted
-# Docker socket (docs/ADR/0002-deployment-dood.md). Sandbox SSH is never
-# published; all sandboxes join the shared "sessionbox" network below.
+# The server manages container containers on this host through the mounted
+# Docker socket (docs/ADR/0002-deployment-dood.md). Container SSH is never
+# published; all containers join the shared "sessionbox" network below.
 
 name: sessionbox
 

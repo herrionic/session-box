@@ -1,8 +1,8 @@
 /**
  * Simulated harness sessions — Day 4 acceptance test and demo tool.
  *
- * Two independent "agent sessions" each claim a sandbox, prove workspace
- * isolation, reconnect to the same sandbox and clean up.
+ * Two independent "agent sessions" each claim a container, prove workspace
+ * isolation, reconnect to the same container and clean up.
  *
  *   pnpm --filter @sessionbox/server harness-sim --url http://host:8787 [--token <token>] [--keep]
  */
@@ -40,19 +40,19 @@ try {
   const health = await client.health();
   log(`health: ${health.status} (runtime=${health.runtime})`);
 
-  const sandboxA = await client.createSandbox({
+  const containerA = await client.createContainer({
     name: "sim-session-a",
     resources: { memoryLimitMb: 256, cpuLimit: 0.5 },
   });
-  const sessionA = await client.connect(sandboxA.id);
-  log(`session A -> ${sandboxA.name} (${sandboxA.id})`);
+  const sessionA = await client.connect(containerA.id);
+  log(`session A -> ${containerA.name} (${containerA.id})`);
 
-  const sandboxB = await client.createSandbox({
+  const containerB = await client.createContainer({
     name: "sim-session-b",
     resources: { memoryLimitMb: 256, cpuLimit: 0.5 },
   });
-  const sessionB = await client.connect(sandboxB.id);
-  log(`session B -> ${sandboxB.name} (${sandboxB.id})`);
+  const sessionB = await client.connect(containerB.id);
+  log(`session B -> ${containerB.name} (${containerB.id})`);
 
   await sessionA.writeFile("/workspace/who.txt", "AAA");
   const exec = await sessionA.exec("cat /workspace/who.txt");
@@ -67,21 +67,21 @@ try {
   }
 
   await sessionA.close();
-  const reconnected = await client.connect(sandboxA.id);
+  const reconnected = await client.connect(containerA.id);
   const persisted = await reconnected.readFile("/workspace/who.txt");
   log(`A reconnect: who.txt = ${JSON.stringify(persisted.content)}`);
   await reconnected.close();
   await sessionB.close();
 
-  const afterDisconnect = await client.getSandbox(sandboxA.id);
+  const afterDisconnect = await client.getContainer(containerA.id);
   log(`A after disconnect: status=${afterDisconnect.status}`);
 
   if (keep) {
-    log(`kept sandboxes: ${sandboxA.id}, ${sandboxB.id}`);
+    log(`kept containers: ${containerA.id}, ${containerB.id}`);
   } else {
-    await client.deleteSandbox(sandboxA.id);
-    await client.deleteSandbox(sandboxB.id);
-    log("sandboxes deleted");
+    await client.deleteContainer(containerA.id);
+    await client.deleteContainer(containerB.id);
+    log("containers deleted");
   }
 } catch (error) {
   console.error("simulated harness failed:", error);

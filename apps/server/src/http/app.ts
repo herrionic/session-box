@@ -8,24 +8,24 @@ import { newRequestId } from "@sessionbox/shared";
 import type { AgentGateway } from "../agent/gateway.ts";
 import type { ServerConfig } from "../config.ts";
 import { SessionBoxError, isSessionBoxError } from "../errors.ts";
-import type { SandboxFilesService } from "../files/service.ts";
+import type { ContainerFilesService } from "../files/service.ts";
 import type { Logger } from "../logging.ts";
-import type { SandboxRuntime } from "../runtime/types.ts";
-import type { SandboxService } from "../sandbox/service.ts";
+import type { ContainerRuntime } from "../runtime/types.ts";
+import type { ContainerService } from "../container/service.ts";
 import { createAuthHook } from "./auth.ts";
 import { registerAgentRoutes } from "./routes/agent.ts";
 import { registerFileRoutes } from "./routes/files.ts";
 import { registerHealthRoutes } from "./routes/health.ts";
-import { registerSandboxRoutes } from "./routes/sandboxes.ts";
+import { registerContainerRoutes } from "./routes/containers.ts";
 import { registerTerminalRoutes } from "./routes/terminal.ts";
 import type { SessionBoxApp } from "./types.ts";
 
 export interface AppDependencies {
   config: ServerConfig;
   logger: Logger;
-  runtime: SandboxRuntime;
-  service: SandboxService;
-  files: SandboxFilesService;
+  runtime: ContainerRuntime;
+  service: ContainerService;
+  files: ContainerFilesService;
   gateway: AgentGateway;
 }
 
@@ -100,7 +100,7 @@ export async function buildApp(deps: AppDependencies): Promise<SessionBoxApp> {
   app.addHook("onRequest", createAuthHook(deps.config.auth));
 
   registerHealthRoutes(app, { config: deps.config, runtime: deps.runtime });
-  registerSandboxRoutes(app, { service: deps.service });
+  registerContainerRoutes(app, { service: deps.service });
   registerFileRoutes(app, { files: deps.files });
   registerTerminalRoutes(app, { service: deps.service });
   registerAgentRoutes(app, { gateway: deps.gateway, service: deps.service });

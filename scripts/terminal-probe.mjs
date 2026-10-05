@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * Terminal probe: connects to the SessionBox terminal WebSocket, runs a
- * command in the sandbox and prints the output.
+ * command in the container and prints the output.
  *
- *   node scripts/terminal-probe.mjs ws://host:8787/api/ws/terminal/<sandboxId> [command]
+ *   node scripts/terminal-probe.mjs ws://host:8787/api/ws/terminal/<containerId> [command]
  *
  * Uses Node's built-in WebSocket client (Node 22+), so it has no dependencies.
  */

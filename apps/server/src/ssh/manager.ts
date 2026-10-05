@@ -7,9 +7,9 @@ import {
 } from "./session.ts";
 
 /**
- * Caches one SSH session per sandbox so file operations, the terminal and the
+ * Caches one SSH session per container so file operations, the terminal and the
  * agent gateway share a single connection. Sessions are explicitly released
- * when the sandbox stops, restarts or is deleted; a failed operation drops the
+ * when the container stops, restarts or is deleted; a failed operation drops the
  * cached session so the next request reconnects.
  */
 export class SshSessionManager {
@@ -21,18 +21,18 @@ export class SshSessionManager {
   ) {}
 
   get(request: SshSessionRequest): Promise<SshSession> {
-    const existing = this.sessions.get(request.sandboxId);
+    const existing = this.sessions.get(request.containerId);
     if (existing !== undefined) return existing;
 
     const created = this.factory.create(request).catch((error: unknown) => {
       // Never cache a failed connection.
-      if (this.sessions.get(request.sandboxId) === created) {
-        this.sessions.delete(request.sandboxId);
+      if (this.sessions.get(request.containerId) === created) {
+        this.sessions.delete(request.containerId);
       }
       throw error;
     });
 
-    this.sessions.set(request.sandboxId, created);
+    this.sessions.set(request.containerId, created);
     return created;
   }
 
@@ -50,16 +50,16 @@ export class SshSessionManager {
       return await operation(session);
     } catch (error) {
       if (error instanceof SshError) {
-        await this.release(request.sandboxId);
+        await this.release(request.containerId);
       }
       throw error;
     }
   }
 
-  async release(sandboxId: string): Promise<void> {
-    const pending = this.sessions.get(sandboxId);
+  async release(containerId: string): Promise<void> {
+    const pending = this.sessions.get(containerId);
     if (pending === undefined) return;
-    this.sessions.delete(sandboxId);
+    this.sessions.delete(containerId);
 
     try {
       const session = await pending;
@@ -67,12 +67,12 @@ export class SshSessionManager {
     } catch {
       // The connection is already gone; nothing to clean up.
     }
-    this.logger.debug({ event: "ssh.connection.released", sandboxId }, "SSH session released");
+    this.logger.debug({ event: "ssh.connection.released", containerId }, "SSH session released");
   }
 
   async releaseAll(): Promise<void> {
-    for (const sandboxId of [...this.sessions.keys()]) {
-      await this.release(sandboxId);
+    for (const containerId of [...this.sessions.keys()]) {
+      await this.release(containerId);
     }
   }
 }

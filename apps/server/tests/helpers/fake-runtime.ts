@@ -1,23 +1,23 @@
 import { PassThrough, type Duplex } from "node:stream";
 import type {
   RuntimeCreateSpec,
-  RuntimeSandbox,
-  SandboxRuntime,
+  RuntimeContainer,
+  ContainerRuntime,
 } from "../../src/runtime/types.ts";
 import { RuntimeError, RuntimeNotFoundError } from "../../src/runtime/types.ts";
 
 interface FakeContainer {
-  sandboxId: string;
+  containerId: string;
   status: "running" | "stopped";
   startedAt?: string;
 }
 
 /**
- * In-memory `SandboxRuntime` test double. It proves the runtime seam is
- * implementable without Docker and lets the whole sandbox service and HTTP
+ * In-memory `ContainerRuntime` test double. It proves the runtime seam is
+ * implementable without Docker and lets the whole container service and HTTP
  * layer be tested on the development machine.
  */
-export class FakeRuntime implements SandboxRuntime {
+export class FakeRuntime implements ContainerRuntime {
   readonly runtimeId = "fake";
   readonly containers = new Map<string, FakeContainer>();
   readonly images = new Set<string>();
@@ -31,16 +31,16 @@ export class FakeRuntime implements SandboxRuntime {
     this.images.add(image);
   }
 
-  async create(spec: RuntimeCreateSpec): Promise<RuntimeSandbox> {
+  async create(spec: RuntimeCreateSpec): Promise<RuntimeContainer> {
     this.createCalls.push(spec);
     if (this.failNextCreate) {
       this.failNextCreate = false;
       throw new RuntimeError("create failed");
     }
 
-    const ref = `fake_${spec.sandboxId}`;
-    this.containers.set(ref, { sandboxId: spec.sandboxId, status: "stopped" });
-    return { ref, sandboxId: spec.sandboxId, status: "stopped" };
+    const ref = `fake_${spec.containerId}`;
+    this.containers.set(ref, { containerId: spec.containerId, status: "stopped" });
+    return { ref, containerId: spec.containerId, status: "stopped" };
   }
 
   async start(ref: string): Promise<void> {
@@ -71,13 +71,13 @@ export class FakeRuntime implements SandboxRuntime {
     this.containers.delete(ref);
   }
 
-  async inspect(ref: string): Promise<RuntimeSandbox | undefined> {
+  async inspect(ref: string): Promise<RuntimeContainer | undefined> {
     const container = this.containers.get(ref);
-    return container ? toSandbox(ref, container) : undefined;
+    return container ? toContainer(ref, container) : undefined;
   }
 
-  async list(): Promise<RuntimeSandbox[]> {
-    return [...this.containers.entries()].map(([ref, container]) => toSandbox(ref, container));
+  async list(): Promise<RuntimeContainer[]> {
+    return [...this.containers.entries()].map(([ref, container]) => toContainer(ref, container));
   }
 
   async logs(): Promise<string> {
@@ -95,10 +95,10 @@ export class FakeRuntime implements SandboxRuntime {
   }
 }
 
-function toSandbox(ref: string, container: FakeContainer): RuntimeSandbox {
+function toContainer(ref: string, container: FakeContainer): RuntimeContainer {
   return {
     ref,
-    sandboxId: container.sandboxId,
+    containerId: container.containerId,
     status: container.status,
     ...(container.startedAt !== undefined ? { startedAt: container.startedAt } : {}),
   };

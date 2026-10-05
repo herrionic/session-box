@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent, type JSX } from "react";
-import type { Sandbox } from "@sessionbox/protocol";
+import type { Container } from "@sessionbox/protocol";
 import { ApiError, api, getToken, setToken } from "../api.ts";
 
-export function SandboxList(): JSX.Element {
-  const [sandboxes, setSandboxes] = useState<Sandbox[]>([]);
+export function ContainerList(): JSX.Element {
+  const [containers, setContainers] = useState<Container[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [image, setImage] = useState("");
@@ -12,7 +12,7 @@ export function SandboxList(): JSX.Element {
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
-      setSandboxes(await api.list());
+      setContainers(await api.list());
     } catch (caught) {
       setError(describeError(caught));
     }
@@ -56,13 +56,13 @@ export function SandboxList(): JSX.Element {
     }
   };
 
-  const onDelete = async (sandbox: Sandbox): Promise<void> => {
-    if (!window.confirm(`Delete sandbox "${sandbox.name}"? This cannot be undone.`)) return;
-    await run(sandbox.id, () => api.remove(sandbox.id));
+  const onDelete = async (container: Container): Promise<void> => {
+    if (!window.confirm(`Delete container "${container.name}"? This cannot be undone.`)) return;
+    await run(container.id, () => api.remove(container.id));
   };
 
-  const openSandbox = (id: string): void => {
-    window.location.hash = `#/sandboxes/${id}`;
+  const openContainer = (id: string): void => {
+    window.location.hash = `#/containers/${id}`;
   };
 
   return (
@@ -71,7 +71,7 @@ export function SandboxList(): JSX.Element {
         <div>
           <h1>SessionBox</h1>
           <p className="subtitle">
-            Sandboxes bound to agent sessions — managed here, executed in isolation.
+            Containers bound to agent sessions — managed here, executed in isolation.
           </p>
         </div>
         <div className="header-actions">
@@ -89,7 +89,7 @@ export function SandboxList(): JSX.Element {
       </header>
 
       <section className="card">
-        <h2>Create sandbox</h2>
+        <h2>Create container</h2>
         <form className="create-form" onSubmit={(event) => void onCreate(event)}>
           <input
             type="text"
@@ -120,14 +120,14 @@ export function SandboxList(): JSX.Element {
 
       <section className="card">
         <h2>
-          Sandboxes <span className="count">{sandboxes.length}</span>
+          Containers <span className="count">{containers.length}</span>
         </h2>
-        {sandboxes.length === 0 ? (
+        {containers.length === 0 ? (
           <p className="empty">
-            No sandboxes yet. Create one above, or let an agent session claim one.
+            No containers yet. Create one above, or let an agent session claim one.
           </p>
         ) : (
-          <table className="sandbox-table">
+          <table className="container-table">
             <thead>
               <tr>
                 <th>Name</th>
@@ -140,47 +140,47 @@ export function SandboxList(): JSX.Element {
               </tr>
             </thead>
             <tbody>
-              {sandboxes.map((sandbox) => {
-                const busy = busyId === sandbox.id;
+              {containers.map((container) => {
+                const busy = busyId === container.id;
                 return (
-                  <tr key={sandbox.id}>
+                  <tr key={container.id}>
                     <td>
                       <button
                         type="button"
                         className="link-button"
-                        onClick={() => openSandbox(sandbox.id)}
+                        onClick={() => openContainer(container.id)}
                       >
-                        {sandbox.name}
+                        {container.name}
                       </button>
-                      <div className="id" title={sandbox.id}>
-                        {sandbox.id}
+                      <div className="id" title={container.id}>
+                        {container.id}
                       </div>
                     </td>
-                    <td className="mono">{sandbox.image}</td>
+                    <td className="mono">{container.image}</td>
                     <td>
-                      <span className={`status status-${sandbox.status}`}>{sandbox.status}</span>
+                      <span className={`status status-${container.status}`}>{container.status}</span>
                     </td>
-                    <td>{formatResources(sandbox)}</td>
-                    <td>{formatDate(sandbox.createdAt)}</td>
-                    <td>{formatDate(sandbox.lastActivityAt)}</td>
+                    <td>{formatResources(container)}</td>
+                    <td>{formatDate(container.createdAt)}</td>
+                    <td>{formatDate(container.lastActivityAt)}</td>
                     <td className="actions">
-                      <button type="button" className="secondary" onClick={() => openSandbox(sandbox.id)}>
+                      <button type="button" className="secondary" onClick={() => openContainer(container.id)}>
                         Open
                       </button>
-                      {sandbox.status === "stopped" || sandbox.status === "failed" ? (
+                      {container.status === "stopped" || container.status === "failed" ? (
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() => void run(sandbox.id, () => api.start(sandbox.id))}
+                          onClick={() => void run(container.id, () => api.start(container.id))}
                         >
                           Start
                         </button>
                       ) : null}
-                      {sandbox.status === "running" ? (
+                      {container.status === "running" ? (
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() => void run(sandbox.id, () => api.stop(sandbox.id))}
+                          onClick={() => void run(container.id, () => api.stop(container.id))}
                         >
                           Stop
                         </button>
@@ -188,8 +188,8 @@ export function SandboxList(): JSX.Element {
                       <button
                         type="button"
                         className="danger"
-                        disabled={busy || sandbox.status === "deleting"}
-                        onClick={() => void onDelete(sandbox)}
+                        disabled={busy || container.status === "deleting"}
+                        onClick={() => void onDelete(container)}
                       >
                         Delete
                       </button>
@@ -207,11 +207,11 @@ export function SandboxList(): JSX.Element {
   );
 }
 
-function formatResources(sandbox: Sandbox): string {
+function formatResources(container: Container): string {
   const parts: string[] = [];
-  if (sandbox.resources.cpuLimit !== undefined) parts.push(`${sandbox.resources.cpuLimit} CPU`);
-  if (sandbox.resources.memoryLimitMb !== undefined) {
-    parts.push(`${sandbox.resources.memoryLimitMb} MB`);
+  if (container.resources.cpuLimit !== undefined) parts.push(`${container.resources.cpuLimit} CPU`);
+  if (container.resources.memoryLimitMb !== undefined) {
+    parts.push(`${container.resources.memoryLimitMb} MB`);
   }
   return parts.length > 0 ? parts.join(" · ") : "defaults";
 }

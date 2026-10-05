@@ -5,21 +5,21 @@ import type {
 } from "@sessionbox/protocol";
 import { SessionBoxError } from "../errors.ts";
 import type { Logger } from "../logging.ts";
-import type { SandboxService } from "../sandbox/service.ts";
-import { normalizeSandboxPath } from "../ssh/paths.ts";
+import type { ContainerService } from "../container/service.ts";
+import { normalizeContainerPath } from "../ssh/paths.ts";
 import { toPublicSshError } from "../ssh/public-errors.ts";
 
 /** Largest file the agent protocol will move in one message. */
 const MAX_TRANSFER_BYTES = 8 * 1024 * 1024;
 
 /**
- * Executes agent protocol requests against a sandbox. Agent operations work
- * on absolute paths inside the sandbox (unlike the human file manager, which
+ * Executes agent protocol requests against a container. Agent operations work
+ * on absolute paths inside the container (unlike the human file manager, which
  * is confined to the workspace); the SSH user's permissions are the boundary.
  */
 export class AgentGateway {
   constructor(
-    private readonly sandboxes: SandboxService,
+    private readonly containers: ContainerService,
     private readonly logger: Logger,
   ) {}
 
@@ -47,9 +47,9 @@ export class AgentGateway {
   }
 
   private async exec(request: Extract<AgentRequest, { type: "exec" }>): Promise<AgentResponse> {
-    const result = await this.sandboxes.withSshSession(request.sandboxId, (session) =>
+    const result = await this.containers.withSshSession(request.containerId, (session) =>
       session.exec(request.command, {
-        ...(request.cwd !== undefined ? { cwd: normalizeSandboxPath(request.cwd) } : {}),
+        ...(request.cwd !== undefined ? { cwd: normalizeContainerPath(request.cwd) } : {}),
         ...(request.timeoutMs !== undefined ? { timeoutMs: request.timeoutMs } : {}),
       }),
     );
@@ -66,9 +66,9 @@ export class AgentGateway {
   private async readFile(
     request: Extract<AgentRequest, { type: "file.read" }>,
   ): Promise<AgentResponse> {
-    const path = normalizeSandboxPath(request.path);
+    const path = normalizeContainerPath(request.path);
 
-    const file = await this.sandboxes.withSshSession(request.sandboxId, async (session) => {
+    const file = await this.containers.withSshSession(request.containerId, async (session) => {
       const entry = await session.stat(path);
       if (entry.type !== "file") {
         throw new SessionBoxError("INVALID_REQUEST", "only regular files can be read");
@@ -94,7 +94,7 @@ export class AgentGateway {
   private async writeFile(
     request: Extract<AgentRequest, { type: "file.write" }>,
   ): Promise<AgentResponse> {
-    const path = normalizeSandboxPath(request.path);
+    const path = normalizeContainerPath(request.path);
     const bytes = Buffer.byteLength(request.content, "utf8");
     if (bytes > MAX_TRANSFER_BYTES) {
       throw new SessionBoxError(
@@ -103,7 +103,7 @@ export class AgentGateway {
       );
     }
 
-    const file = await this.sandboxes.withSshSession(request.sandboxId, async (session) => {
+    const file = await this.containers.withSshSession(request.containerId, async (session) => {
       await session.writeFile(path, request.content);
       const entry = await session.stat(path);
       return { path, size: entry.size, modifiedAt: entry.modifiedAt };
@@ -115,10 +115,10 @@ export class AgentGateway {
   private async listFiles(
     request: Extract<AgentRequest, { type: "file.list" }>,
   ): Promise<AgentResponse> {
-    const path = normalizeSandboxPath(request.path);
+    const path = normalizeContainerPath(request.path);
 
-    const entries: FileEntry[] = await this.sandboxes.withSshSession(
-      request.sandboxId,
+    const entries: FileEntry[] = await this.containers.withSshSession(
+      request.containerId,
       (session) => session.list(path),
     );
 
@@ -128,9 +128,9 @@ export class AgentGateway {
   private async statFile(
     request: Extract<AgentRequest, { type: "file.stat" }>,
   ): Promise<AgentResponse> {
-    const path = normalizeSandboxPath(request.path);
+    const path = normalizeContainerPath(request.path);
 
-    const entry = await this.sandboxes.withSshSession(request.sandboxId, (session) =>
+    const entry = await this.containers.withSshSession(request.containerId, (session) =>
       session.stat(path),
     );
 
@@ -140,9 +140,9 @@ export class AgentGateway {
   private async mkdir(
     request: Extract<AgentRequest, { type: "file.mkdir" }>,
   ): Promise<AgentResponse> {
-    const path = normalizeSandboxPath(request.path);
+    const path = normalizeContainerPath(request.path);
 
-    await this.sandboxes.withSshSession(request.sandboxId, (session) =>
+    await this.containers.withSshSession(request.containerId, (session) =>
       session.mkdir(path, request.recursive === true ? { recursive: true } : {}),
     );
 
@@ -152,9 +152,9 @@ export class AgentGateway {
   private async remove(
     request: Extract<AgentRequest, { type: "file.remove" }>,
   ): Promise<AgentResponse> {
-    const path = normalizeSandboxPath(request.path);
+    const path = normalizeContainerPath(request.path);
 
-    await this.sandboxes.withSshSession(request.sandboxId, (session) =>
+    await this.containers.withSshSession(request.containerId, (session) =>
       session.remove(path, request.recursive === true ? { recursive: true } : {}),
     );
 

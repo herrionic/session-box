@@ -29,7 +29,7 @@ afterEach(async () => {
 });
 
 describe("SessionBoxFileSystem", () => {
-  it("resolves host paths into sandbox targets and back for display", async () => {
+  it("resolves host paths into container targets and back for display", async () => {
     const target = await fs.resolve("notes.txt");
 
     expect(String(target.targetKey)).toBe("/workspace/notes.txt");
@@ -135,7 +135,7 @@ describe("SessionBoxFileSystem", () => {
     });
   });
 
-  it("answers containment from sandbox targets", async () => {
+  it("answers containment from container targets", async () => {
     const parent = await fs.resolve(HOST_CWD);
     const child = await fs.resolve("notes.txt");
 

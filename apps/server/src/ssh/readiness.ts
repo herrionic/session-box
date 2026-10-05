@@ -3,7 +3,7 @@ import type { SshSessionFactory } from "./session.ts";
 
 export interface WaitForSshOptions {
   factory: SshSessionFactory;
-  sandboxId: string;
+  containerId: string;
   runtimeRef: string;
   timeoutMs?: number;
   intervalMs?: number;
@@ -15,8 +15,8 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_INTERVAL_MS = 500;
 
 /**
- * Polls the sandbox SSH endpoint until a session can be established. The
- * sandbox is only reported as `running` after this succeeds (PROJECT.md §13).
+ * Polls the container SSH endpoint until a session can be established. The
+ * container is only reported as `running` after this succeeds (PROJECT.md §13).
  */
 export async function waitForSsh(options: WaitForSshOptions): Promise<void> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -29,7 +29,7 @@ export async function waitForSsh(options: WaitForSshOptions): Promise<void> {
   for (;;) {
     try {
       const session = await options.factory.create({
-        sandboxId: options.sandboxId,
+        containerId: options.containerId,
         runtimeRef: options.runtimeRef,
       });
       await session.close();
@@ -44,7 +44,7 @@ export async function waitForSsh(options: WaitForSshOptions): Promise<void> {
 
   throw new SessionBoxError(
     "SSH_UNAVAILABLE",
-    "sandbox SSH did not become ready before the timeout",
+    "container SSH did not become ready before the timeout",
     { cause: lastError },
   );
 }

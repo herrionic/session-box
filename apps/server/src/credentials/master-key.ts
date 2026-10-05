@@ -25,7 +25,7 @@ export function requireMasterKey(key: Buffer | undefined): Buffer {
   if (key === undefined) {
     throw new SessionBoxError(
       "INTERNAL_ERROR",
-      "SESSIONBOX_MASTER_KEY is not configured; refusing to store sandbox credentials",
+      "SESSIONBOX_MASTER_KEY is not configured; refusing to store container credentials",
     );
   }
   return key;

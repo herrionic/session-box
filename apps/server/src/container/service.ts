@@ -1,35 +1,35 @@
 import {
   resolveLifecyclePolicy,
-  type CreateSandboxRequest,
+  type CreateContainerRequest,
   type LifecyclePolicy,
   type LifecyclePolicyPatch,
-  type SandboxResources,
-  type SandboxStatus,
-  type UpdateSandboxSettingsRequest,
+  type ContainerResources,
+  type ContainerStatus,
+  type UpdateContainerSettingsRequest,
 } from "@sessionbox/protocol";
-import { newSandboxId, nowIso } from "@sessionbox/shared";
+import { newContainerId, nowIso } from "@sessionbox/shared";
 import type { CredentialStore } from "../credentials/store.ts";
 import { SessionBoxError } from "../errors.ts";
 import type { Logger } from "../logging.ts";
-import { RuntimeNotFoundError, type RuntimeSandbox, type SandboxRuntime } from "../runtime/types.ts";
+import { RuntimeNotFoundError, type RuntimeContainer, type ContainerRuntime } from "../runtime/types.ts";
 import { generateSshKeyPair, SSH_PRIVATE_KEY_CREDENTIAL } from "../ssh/keypair.ts";
 import type { SshSessionManager } from "../ssh/manager.ts";
 import { waitForSsh } from "../ssh/readiness.ts";
 import type { SshSession, SshSessionFactory } from "../ssh/session.ts";
-import type { SandboxRepository } from "./repository.ts";
+import type { ContainerRepository } from "./repository.ts";
 import { assertOperationAllowed } from "./state.ts";
-import type { SandboxRecord } from "./types.ts";
+import type { ContainerRecord } from "./types.ts";
 
-export interface SandboxServiceOptions {
-  runtime: SandboxRuntime;
-  repository: SandboxRepository;
+export interface ContainerServiceOptions {
+  runtime: ContainerRuntime;
+  repository: ContainerRepository;
   credentials: CredentialStore;
   ssh: SshSessionFactory;
   sessions: SshSessionManager;
   logger: Logger;
   baseImage: string;
   workspace: string;
-  /** How long to wait for sshd inside a new sandbox before failing. */
+  /** How long to wait for sshd inside a new container before failing. */
   sshReadyTimeoutMs?: number;
   sshRetryIntervalMs?: number;
   /** Injectable for tests. */
@@ -38,20 +38,20 @@ export interface SandboxServiceOptions {
   now?: () => number;
 }
 
-/** Default limits so every sandbox is bounded even when none are requested. */
-const DEFAULT_RESOURCES: SandboxResources = {
+/** Default limits so every container is bounded even when none are requested. */
+const DEFAULT_RESOURCES: ContainerResources = {
   cpuLimit: 1,
   memoryLimitMb: 1024,
   pidsLimit: 512,
 };
 
 /**
- * Owns sandbox lifecycle and state transitions. Depends only on the
- * `SandboxRuntime` seam, never on a concrete runtime SDK.
+ * Owns container lifecycle and state transitions. Depends only on the
+ * `ContainerRuntime` seam, never on a concrete runtime SDK.
  */
-export class SandboxService {
-  private readonly runtime: SandboxRuntime;
-  private readonly repository: SandboxRepository;
+export class ContainerService {
+  private readonly runtime: ContainerRuntime;
+  private readonly repository: ContainerRepository;
   private readonly credentials: CredentialStore;
   private readonly ssh: SshSessionFactory;
   private readonly sessions: SshSessionManager;
@@ -62,10 +62,10 @@ export class SandboxService {
   private readonly sshRetryIntervalMs: number;
   private readonly sleep: ((ms: number) => Promise<void>) | undefined;
   private readonly now: () => number;
-  /** Per-sandbox operation chains: serializes concurrent state changes. */
+  /** Per-container operation chains: serializes concurrent state changes. */
   private readonly chains = new Map<string, Promise<unknown>>();
 
-  constructor(options: SandboxServiceOptions) {
+  constructor(options: ContainerServiceOptions) {
     this.runtime = options.runtime;
     this.repository = options.repository;
     this.credentials = options.credentials;
@@ -80,9 +80,9 @@ export class SandboxService {
     this.now = options.now ?? Date.now;
   }
 
-  async create(request: CreateSandboxRequest): Promise<SandboxRecord> {
-    const id = newSandboxId();
-    const record: SandboxRecord = {
+  async create(request: CreateContainerRequest): Promise<ContainerRecord> {
+    const id = newContainerId();
+    const record: ContainerRecord = {
       id,
       name: request.name ?? defaultName(id),
       image: request.image ?? this.baseImage,
@@ -96,19 +96,19 @@ export class SandboxService {
     };
 
     await this.repository.save(record);
-    this.logger.info({ event: "sandbox.create.requested", sandboxId: id }, "sandbox creation requested");
+    this.logger.info({ event: "container.create.requested", containerId: id }, "container creation requested");
 
     try {
       await this.runtime.ensureImage(record.image);
 
-      // One ephemeral SSH keypair per sandbox: the private key stays encrypted
+      // One ephemeral SSH keypair per container: the private key stays encrypted
       // in the credential store, only the public key is injected into the
       // container (PROJECT.md §14).
       const keyPair = generateSshKeyPair();
       await this.credentials.save(id, SSH_PRIVATE_KEY_CREDENTIAL, keyPair.privateKey);
 
       const created = await this.runtime.create({
-        sandboxId: id,
+        containerId: id,
         name: record.name,
         image: record.image,
         workspace: record.workspace,
@@ -120,7 +120,7 @@ export class SandboxService {
       await this.runtime.start(created.ref);
       await waitForSsh({
         factory: this.ssh,
-        sandboxId: id,
+        containerId: id,
         runtimeRef: created.ref,
         timeoutMs: this.sshReadyTimeoutMs,
         intervalMs: this.sshRetryIntervalMs,
@@ -131,35 +131,35 @@ export class SandboxService {
       record.startedAt = nowIso(this.now());
       await this.repository.save(record);
 
-      this.logger.info({ event: "sandbox.created", sandboxId: id }, "sandbox created");
+      this.logger.info({ event: "container.created", containerId: id }, "container created");
       return record;
     } catch (error) {
       record.status = "failed";
       await this.repository.save(record);
       this.logger.error(
-        { event: "sandbox.failed", sandboxId: id, err: errorMessage(error) },
-        "sandbox creation failed",
+        { event: "container.failed", containerId: id, err: errorMessage(error) },
+        "container creation failed",
       );
       // Configuration errors (for example a missing master key) must not be
       // disguised as runtime failures.
       if (error instanceof SessionBoxError && error.code === "INTERNAL_ERROR") throw error;
       throw new SessionBoxError(
-        "SANDBOX_CREATE_FAILED",
-        "failed to create the sandbox; see server logs",
+        "CONTAINER_CREATE_FAILED",
+        "failed to create the container; see server logs",
         { cause: error },
       );
     }
   }
 
-  async list(): Promise<SandboxRecord[]> {
+  async list(): Promise<ContainerRecord[]> {
     return this.repository.list();
   }
 
-  async get(id: string): Promise<SandboxRecord> {
+  async get(id: string): Promise<ContainerRecord> {
     return this.require(id);
   }
 
-  async start(id: string): Promise<SandboxRecord> {
+  async start(id: string): Promise<ContainerRecord> {
     return this.withLock(id, async () => {
       const record = await this.require(id);
       assertOperationAllowed("start", record.status);
@@ -168,7 +168,7 @@ export class SandboxService {
       try {
         await this.runtime.start(ref);
       } catch (error) {
-        throw this.toPublicRuntimeError(error, "start the sandbox");
+        throw this.toPublicRuntimeError(error, "start the container");
       }
 
       record.status = "running";
@@ -177,12 +177,12 @@ export class SandboxService {
       await this.repository.save(record);
       await this.sessions.release(id);
 
-      this.logger.info({ event: "sandbox.started", sandboxId: id }, "sandbox started");
+      this.logger.info({ event: "container.started", containerId: id }, "container started");
       return record;
     });
   }
 
-  async stop(id: string): Promise<SandboxRecord> {
+  async stop(id: string): Promise<ContainerRecord> {
     return this.withLock(id, async () => {
       const record = await this.require(id);
       assertOperationAllowed("stop", record.status);
@@ -191,7 +191,7 @@ export class SandboxService {
       try {
         await this.runtime.stop(ref);
       } catch (error) {
-        throw this.toPublicRuntimeError(error, "stop the sandbox");
+        throw this.toPublicRuntimeError(error, "stop the container");
       }
 
       record.status = "stopped";
@@ -199,12 +199,12 @@ export class SandboxService {
       await this.repository.save(record);
       await this.sessions.release(id);
 
-      this.logger.info({ event: "sandbox.stopped", sandboxId: id }, "sandbox stopped");
+      this.logger.info({ event: "container.stopped", containerId: id }, "container stopped");
       return record;
     });
   }
 
-  async restart(id: string): Promise<SandboxRecord> {
+  async restart(id: string): Promise<ContainerRecord> {
     return this.withLock(id, async () => {
       const record = await this.require(id);
       assertOperationAllowed("restart", record.status);
@@ -213,7 +213,7 @@ export class SandboxService {
       try {
         await this.runtime.restart(ref);
       } catch (error) {
-        throw this.toPublicRuntimeError(error, "restart the sandbox");
+        throw this.toPublicRuntimeError(error, "restart the container");
       }
 
       record.status = "running";
@@ -222,7 +222,7 @@ export class SandboxService {
       await this.repository.save(record);
       await this.sessions.release(id);
 
-      this.logger.info({ event: "sandbox.restarted", sandboxId: id }, "sandbox restarted");
+      this.logger.info({ event: "container.restarted", containerId: id }, "container restarted");
       return record;
     });
   }
@@ -242,20 +242,20 @@ export class SandboxService {
         } catch (error) {
           record.status = "failed";
           await this.repository.save(record);
-          throw this.toPublicRuntimeError(error, "delete the sandbox");
+          throw this.toPublicRuntimeError(error, "delete the container");
         }
       }
 
       await this.credentials.removeAll(id);
       await this.repository.delete(id);
-      this.logger.info({ event: "sandbox.deleted", sandboxId: id }, "sandbox deleted");
+      this.logger.info({ event: "container.deleted", containerId: id }, "container deleted");
     });
   }
 
   async updateSettings(
     id: string,
-    patch: UpdateSandboxSettingsRequest,
-  ): Promise<SandboxRecord> {
+    patch: UpdateContainerSettingsRequest,
+  ): Promise<ContainerRecord> {
     return this.withLock(id, async () => {
       const record = await this.require(id);
 
@@ -265,7 +265,7 @@ export class SandboxService {
       }
 
       await this.repository.save(record);
-      this.logger.info({ event: "sandbox.settings.updated", sandboxId: id }, "sandbox settings updated");
+      this.logger.info({ event: "container.settings.updated", containerId: id }, "container settings updated");
       return record;
     });
   }
@@ -276,40 +276,40 @@ export class SandboxService {
     try {
       return await this.runtime.logs(ref, options);
     } catch (error) {
-      throw this.toPublicRuntimeError(error, "read the sandbox logs");
+      throw this.toPublicRuntimeError(error, "read the container logs");
     }
   }
 
   /**
-   * Opens (or reuses) an SSH session for a running sandbox. Shared by the file
+   * Opens (or reuses) an SSH session for a running container. Shared by the file
    * manager, the web terminal and (later) the agent gateway.
    */
   async withSshSession<T>(id: string, operation: (session: SshSession) => Promise<T>): Promise<T> {
     const record = await this.require(id);
     if (record.status !== "running") {
       throw new SessionBoxError(
-        "SANDBOX_NOT_RUNNING",
-        `sandbox is ${record.status}; start it first`,
+        "CONTAINER_NOT_RUNNING",
+        `container is ${record.status}; start it first`,
       );
     }
     const ref = this.requireRef(record);
-    return this.sessions.withSession({ sandboxId: id, runtimeRef: ref }, operation);
+    return this.sessions.withSession({ containerId: id, runtimeRef: ref }, operation);
   }
 
   /**
-   * Returns the cached SSH session for a running sandbox. The web terminal
+   * Returns the cached SSH session for a running container. The web terminal
    * holds its own shell channel on this session.
    */
   async openSshSession(id: string): Promise<SshSession> {
     const record = await this.require(id);
     if (record.status !== "running") {
       throw new SessionBoxError(
-        "SANDBOX_NOT_RUNNING",
-        `sandbox is ${record.status}; start it first`,
+        "CONTAINER_NOT_RUNNING",
+        `container is ${record.status}; start it first`,
       );
     }
     const ref = this.requireRef(record);
-    return this.sessions.get({ sandboxId: id, runtimeRef: ref });
+    return this.sessions.get({ containerId: id, runtimeRef: ref });
   }
 
   /** Releases every cached SSH session (used on server shutdown). */
@@ -354,7 +354,7 @@ export class SandboxService {
     const records = await this.repository.list();
     // The runtime must always be listed: it is also the adoption source for
     // managed containers that lost their record.
-    const runtimeSandboxes = await this.runtime.list();
+    const runtimeContainers = await this.runtime.list();
 
     // No connection survives a restart; stale counters would block auto-stop.
     for (const record of records) {
@@ -364,95 +364,95 @@ export class SandboxService {
       }
     }
 
-    const bySandboxId = new Map(
-      runtimeSandboxes
-        .filter((sandbox) => sandbox.sandboxId !== undefined)
-        .map((sandbox) => [sandbox.sandboxId as string, sandbox]),
+    const byContainerId = new Map(
+      runtimeContainers
+        .filter((container) => container.containerId !== undefined)
+        .map((container) => [container.containerId as string, container]),
     );
 
     for (const record of records) {
       if (record.runtimeRef === undefined) continue;
 
-      const actual = bySandboxId.get(record.id);
+      const actual = byContainerId.get(record.id);
       if (actual === undefined) {
         if (record.status !== "failed") {
           record.status = "failed";
           await this.repository.save(record);
           await this.sessions.release(record.id);
           this.logger.warn(
-            { event: "sandbox.reconcile.missing", sandboxId: record.id },
-            "sandbox container disappeared from the runtime",
+            { event: "container.reconcile.missing", containerId: record.id },
+            "container container disappeared from the runtime",
           );
         }
         continue;
       }
 
-      const status: SandboxStatus = actual.status === "running" ? "running" : "stopped";
+      const status: ContainerStatus = actual.status === "running" ? "running" : "stopped";
       if (record.status !== status) {
         record.status = status;
         if (actual.startedAt !== undefined) record.startedAt = actual.startedAt;
         await this.repository.save(record);
         if (status === "stopped") await this.sessions.release(record.id);
         this.logger.info(
-          { event: "sandbox.reconcile.status", sandboxId: record.id, status },
-          "sandbox status reconciled from the runtime",
+          { event: "container.reconcile.status", containerId: record.id, status },
+          "container status reconciled from the runtime",
         );
       }
     }
 
-    await this.adoptOrphans(records, runtimeSandboxes);
+    await this.adoptOrphans(records, runtimeContainers);
   }
 
   /**
    * Managed runtime objects without a record (lost database) are adopted so
    * they stay manageable. Their SSH credentials are gone with the database,
-   * so agent connections to adopted sandboxes fail until they are recreated.
+   * so agent connections to adopted containers fail until they are recreated.
    */
   private async adoptOrphans(
-    records: SandboxRecord[],
-    runtimeSandboxes: RuntimeSandbox[],
+    records: ContainerRecord[],
+    runtimeContainers: RuntimeContainer[],
   ): Promise<void> {
     const known = new Set(records.map((record) => record.id));
 
-    for (const sandbox of runtimeSandboxes) {
-      const sandboxId = sandbox.sandboxId;
-      if (sandboxId === undefined || known.has(sandboxId)) continue;
+    for (const container of runtimeContainers) {
+      const containerId = container.containerId;
+      if (containerId === undefined || known.has(containerId)) continue;
 
-      const record: SandboxRecord = {
-        id: sandboxId,
-        name: sandbox.name ?? sandboxId,
-        image: sandbox.image ?? this.baseImage,
+      const record: ContainerRecord = {
+        id: containerId,
+        name: container.name ?? containerId,
+        image: container.image ?? this.baseImage,
         runtime: this.runtime.runtimeId,
-        status: sandbox.status === "running" ? "running" : "stopped",
+        status: container.status === "running" ? "running" : "stopped",
         workspace: this.workspace,
         resources: {},
         lifecycle: { autoStop: false, deleteAfterStop: false },
-        createdAt: sandbox.createdAt ?? nowIso(this.now()),
+        createdAt: container.createdAt ?? nowIso(this.now()),
         activeConnections: 0,
-        runtimeRef: sandbox.ref,
+        runtimeRef: container.ref,
       };
 
       await this.repository.save(record);
       this.logger.warn(
-        { event: "sandbox.reconcile.adopted", sandboxId, runtimeRef: sandbox.ref },
+        { event: "container.reconcile.adopted", containerId, runtimeRef: container.ref },
         "adopted a managed container that had no persisted record",
       );
     }
   }
 
-  private async require(id: string): Promise<SandboxRecord> {
+  private async require(id: string): Promise<ContainerRecord> {
     const record = await this.repository.get(id);
     if (record === undefined) {
-      throw new SessionBoxError("SANDBOX_NOT_FOUND", `sandbox ${id} was not found`);
+      throw new SessionBoxError("CONTAINER_NOT_FOUND", `container ${id} was not found`);
     }
     return record;
   }
 
-  private requireRef(record: SandboxRecord): string {
+  private requireRef(record: ContainerRecord): string {
     if (record.runtimeRef === undefined) {
       throw new SessionBoxError(
         "RUNTIME_ERROR",
-        "sandbox has no runtime handle (creation may have failed)",
+        "container has no runtime handle (creation may have failed)",
       );
     }
     return record.runtimeRef;
@@ -461,12 +461,12 @@ export class SandboxService {
   private toPublicRuntimeError(error: unknown, action: string): SessionBoxError {
     const message = `failed to ${action}; see server logs`;
     this.logger.error(
-      { event: "sandbox.operation.failed", action, err: errorMessage(error) },
+      { event: "container.operation.failed", action, err: errorMessage(error) },
       message,
     );
 
     if (error instanceof RuntimeNotFoundError) {
-      return new SessionBoxError("SANDBOX_NOT_FOUND", "sandbox was not found in the container runtime", {
+      return new SessionBoxError("CONTAINER_NOT_FOUND", "container was not found in the container runtime", {
         cause: error,
       });
     }
@@ -474,8 +474,8 @@ export class SandboxService {
   }
 
   /**
-   * Serializes operations per sandbox so concurrent start/stop/delete calls
-   * cannot interleave (PROJECT.md §38). Operations on different sandboxes run
+   * Serializes operations per container so concurrent start/stop/delete calls
+   * cannot interleave (PROJECT.md §38). Operations on different containers run
    * concurrently.
    */
   private withLock<T>(id: string, operation: () => Promise<T>): Promise<T> {
@@ -496,7 +496,7 @@ export class SandboxService {
 }
 
 function defaultName(id: string): string {
-  return `sandbox-${id.slice(4, 10).toLowerCase()}`;
+  return `container-${id.slice(4, 10).toLowerCase()}`;
 }
 
 function applyLifecyclePatch(

@@ -5,11 +5,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentGateway } from "../src/agent/gateway.ts";
 import type { ServerConfig } from "../src/config.ts";
 import { InMemoryCredentialStore } from "../src/credentials/store.ts";
-import { SandboxFilesService } from "../src/files/service.ts";
+import { ContainerFilesService } from "../src/files/service.ts";
 import { buildApp } from "../src/http/app.ts";
 import type { SessionBoxApp } from "../src/http/types.ts";
-import { InMemorySandboxRepository } from "../src/sandbox/repository.ts";
-import { SandboxService } from "../src/sandbox/service.ts";
+import { InMemoryContainerRepository } from "../src/container/repository.ts";
+import { ContainerService } from "../src/container/service.ts";
 import { SshSessionManager } from "../src/ssh/manager.ts";
 import { FakeRuntime } from "./helpers/fake-runtime.ts";
 import { FakeSshSessionFactory } from "./helpers/fake-ssh.ts";
@@ -35,15 +35,15 @@ const testConfig: ServerConfig = {
 describe("HTTP API", () => {
   let app: SessionBoxApp;
   let runtime: FakeRuntime;
-  let files: SandboxFilesService;
+  let files: ContainerFilesService;
 
   beforeEach(async () => {
     runtime = new FakeRuntime();
     const logger = createTestLogger();
     const ssh = new FakeSshSessionFactory();
-    const service = new SandboxService({
+    const service = new ContainerService({
       runtime,
-      repository: new InMemorySandboxRepository(),
+      repository: new InMemoryContainerRepository(),
       credentials: new InMemoryCredentialStore(Buffer.alloc(32, 1)),
       ssh,
       sessions: new SshSessionManager(ssh, logger),
@@ -54,8 +54,8 @@ describe("HTTP API", () => {
       sshRetryIntervalMs: 1,
       sleep: async () => {},
     });
-    files = new SandboxFilesService({
-      sandboxes: service,
+    files = new ContainerFilesService({
+      containers: service,
       workspace: testConfig.docker.workspace,
       logger,
     });
@@ -83,60 +83,60 @@ describe("HTTP API", () => {
     });
   });
 
-  it("runs the full sandbox lifecycle over HTTP", async () => {
+  it("runs the full container lifecycle over HTTP", async () => {
     const created = await app.inject({
       method: "POST",
-      url: "/api/sandboxes",
+      url: "/api/containers",
       payload: { name: "demo", resources: { memoryLimitMb: 512 } },
     });
     expect(created.statusCode).toBe(201);
 
-    const sandbox = created.json() as { id: string; status: string };
-    expect(sandbox.status).toBe("running");
+    const container = created.json() as { id: string; status: string };
+    expect(container.status).toBe("running");
 
-    const list = await app.inject({ method: "GET", url: "/api/sandboxes" });
+    const list = await app.inject({ method: "GET", url: "/api/containers" });
     expect(list.json()).toHaveLength(1);
 
-    const fetched = await app.inject({ method: "GET", url: `/api/sandboxes/${sandbox.id}` });
+    const fetched = await app.inject({ method: "GET", url: `/api/containers/${container.id}` });
     expect(fetched.statusCode).toBe(200);
     expect(fetched.json()).not.toHaveProperty("runtimeRef");
 
     const stopped = await app.inject({
       method: "POST",
-      url: `/api/sandboxes/${sandbox.id}/stop`,
+      url: `/api/containers/${container.id}/stop`,
     });
     expect(stopped.statusCode).toBe(200);
     expect(stopped.json()).toMatchObject({ status: "stopped" });
 
     const started = await app.inject({
       method: "POST",
-      url: `/api/sandboxes/${sandbox.id}/start`,
+      url: `/api/containers/${container.id}/start`,
     });
     expect(started.json()).toMatchObject({ status: "running" });
 
     const restarted = await app.inject({
       method: "POST",
-      url: `/api/sandboxes/${sandbox.id}/restart`,
+      url: `/api/containers/${container.id}/restart`,
     });
     expect(restarted.json()).toMatchObject({ status: "running" });
 
-    const logs = await app.inject({ method: "GET", url: `/api/sandboxes/${sandbox.id}/logs` });
+    const logs = await app.inject({ method: "GET", url: `/api/containers/${container.id}/logs` });
     expect(logs.json()).toEqual({ logs: "fake logs" });
 
-    const removed = await app.inject({ method: "DELETE", url: `/api/sandboxes/${sandbox.id}` });
+    const removed = await app.inject({ method: "DELETE", url: `/api/containers/${container.id}` });
     expect(removed.statusCode).toBe(204);
 
-    const empty = await app.inject({ method: "GET", url: "/api/sandboxes" });
+    const empty = await app.inject({ method: "GET", url: "/api/containers" });
     expect(empty.json()).toHaveLength(0);
   });
 
-  it("patches sandbox settings", async () => {
-    const created = await app.inject({ method: "POST", url: "/api/sandboxes", payload: {} });
-    const sandbox = created.json() as { id: string };
+  it("patches container settings", async () => {
+    const created = await app.inject({ method: "POST", url: "/api/containers", payload: {} });
+    const container = created.json() as { id: string };
 
     const patched = await app.inject({
       method: "PATCH",
-      url: `/api/sandboxes/${sandbox.id}/settings`,
+      url: `/api/containers/${container.id}/settings`,
       payload: { name: "renamed", lifecycle: { autoStop: true, idleTimeoutSeconds: 300 } },
     });
 
@@ -150,7 +150,7 @@ describe("HTTP API", () => {
   it("rejects invalid bodies with a stable error code", async () => {
     const response = await app.inject({
       method: "POST",
-      url: "/api/sandboxes",
+      url: "/api/containers",
       payload: { unknownField: true },
     });
 
@@ -161,7 +161,7 @@ describe("HTTP API", () => {
   it("maps malformed JSON to INVALID_REQUEST instead of an internal error", async () => {
     const response = await app.inject({
       method: "POST",
-      url: "/api/sandboxes",
+      url: "/api/containers",
       headers: { "content-type": "application/json" },
       payload: "{ not json",
     });
@@ -171,23 +171,23 @@ describe("HTTP API", () => {
   });
 
   it("rejects invalid state transitions", async () => {
-    const created = await app.inject({ method: "POST", url: "/api/sandboxes", payload: {} });
-    const sandbox = created.json() as { id: string };
+    const created = await app.inject({ method: "POST", url: "/api/containers", payload: {} });
+    const container = created.json() as { id: string };
 
     const response = await app.inject({
       method: "POST",
-      url: `/api/sandboxes/${sandbox.id}/start`,
+      url: `/api/containers/${container.id}/start`,
     });
 
     expect(response.statusCode).toBe(409);
     expect(response.json().error.code).toBe("INVALID_STATE");
   });
 
-  it("returns SANDBOX_NOT_FOUND for unknown sandboxes", async () => {
-    const response = await app.inject({ method: "GET", url: "/api/sandboxes/sbx_missing" });
+  it("returns CONTAINER_NOT_FOUND for unknown containers", async () => {
+    const response = await app.inject({ method: "GET", url: "/api/containers/ctr_missing" });
 
     expect(response.statusCode).toBe(404);
-    expect(response.json().error.code).toBe("SANDBOX_NOT_FOUND");
+    expect(response.json().error.code).toBe("CONTAINER_NOT_FOUND");
   });
 
   it("returns a stable error for unknown routes", async () => {
@@ -209,9 +209,9 @@ describe("HTTP API with static web assets", () => {
     const runtime = new FakeRuntime();
     const logger = createTestLogger();
     const ssh = new FakeSshSessionFactory();
-    const service = new SandboxService({
+    const service = new ContainerService({
       runtime,
-      repository: new InMemorySandboxRepository(),
+      repository: new InMemoryContainerRepository(),
       credentials: new InMemoryCredentialStore(Buffer.alloc(32, 1)),
       ssh,
       sessions: new SshSessionManager(ssh, logger),
@@ -228,8 +228,8 @@ describe("HTTP API with static web assets", () => {
       logger,
       runtime,
       service,
-      files: new SandboxFilesService({
-        sandboxes: service,
+      files: new ContainerFilesService({
+        containers: service,
         workspace: testConfig.docker.workspace,
         logger,
       }),
@@ -247,13 +247,13 @@ describe("HTTP API with static web assets", () => {
     expect(spa.statusCode).toBe(200);
     expect(spa.body).toContain("SessionBox");
 
-    const missing = await app.inject({ method: "GET", url: "/api/sandboxes/sbx_missing" });
+    const missing = await app.inject({ method: "GET", url: "/api/containers/ctr_missing" });
     expect(missing.statusCode).toBe(404);
-    expect(missing.json().error.code).toBe("SANDBOX_NOT_FOUND");
+    expect(missing.json().error.code).toBe("CONTAINER_NOT_FOUND");
 
     const malformed = await app.inject({
       method: "POST",
-      url: "/api/sandboxes",
+      url: "/api/containers",
       headers: { "content-type": "application/json" },
       payload: "{ not json",
     });

@@ -3,47 +3,47 @@ import { dirname } from "node:path";
 import { SessionBoxClient, SessionBoxClientError } from "@sessionbox/client";
 
 export interface BindingRecord {
-  sandboxId: string;
+  containerId: string;
   updatedAt: string;
 }
 
 export type BindingStore = Record<string, BindingRecord>;
 
-export interface ResolveSandboxOptions {
+export interface ResolveContainerOptions {
   client: SessionBoxClient;
   sessionId: string;
   bindingsFile: string;
-  sandboxName: string;
-  pinnedSandboxId?: string;
+  containerName: string;
+  pinnedContainerId?: string;
   now?: () => string;
 }
 
 /**
- * Resolves the sandbox bound to a Pi session: reuse the stored binding when
- * the sandbox still exists, otherwise create one. The binding survives Pi
+ * Resolves the container bound to a Pi session: reuse the stored binding when
+ * the container still exists, otherwise create one. The binding survives Pi
  * restarts so a resumed session keeps its workspace (PROJECT.md §29, §43.3).
  */
-export async function resolveSandboxId(options: ResolveSandboxOptions): Promise<string> {
-  if (options.pinnedSandboxId !== undefined) {
-    await options.client.getSandbox(options.pinnedSandboxId);
-    return options.pinnedSandboxId;
+export async function resolveContainerId(options: ResolveContainerOptions): Promise<string> {
+  if (options.pinnedContainerId !== undefined) {
+    await options.client.getContainer(options.pinnedContainerId);
+    return options.pinnedContainerId;
   }
 
   const store = await readBindings(options.bindingsFile);
   const existing = store[options.sessionId];
 
   if (existing !== undefined) {
-    if (await sandboxExists(options.client, existing.sandboxId)) {
-      return existing.sandboxId;
+    if (await containerExists(options.client, existing.containerId)) {
+      return existing.containerId;
     }
     delete store[options.sessionId];
   }
 
-  const sandbox = await options.client.createSandbox({ name: options.sandboxName });
+  const container = await options.client.createContainer({ name: options.containerName });
   const now = options.now ?? (() => new Date().toISOString());
-  store[options.sessionId] = { sandboxId: sandbox.id, updatedAt: now() };
+  store[options.sessionId] = { containerId: container.id, updatedAt: now() };
   await writeBindings(options.bindingsFile, store);
-  return sandbox.id;
+  return container.id;
 }
 
 export async function readBindings(file: string): Promise<BindingStore> {
@@ -53,7 +53,7 @@ export async function readBindings(file: string): Promise<BindingStore> {
     return isBindingStore(parsed) ? parsed : {};
   } catch {
     // Missing or unreadable binding files start empty; a broken file must not
-    // prevent a session from getting a sandbox.
+    // prevent a session from getting a container.
     return {};
   }
 }
@@ -65,12 +65,12 @@ export async function writeBindings(file: string, store: BindingStore): Promise<
   await rename(temporary, file);
 }
 
-async function sandboxExists(client: SessionBoxClient, sandboxId: string): Promise<boolean> {
+async function containerExists(client: SessionBoxClient, containerId: string): Promise<boolean> {
   try {
-    await client.getSandbox(sandboxId);
+    await client.getContainer(containerId);
     return true;
   } catch (error) {
-    if (error instanceof SessionBoxClientError && error.code === "SANDBOX_NOT_FOUND") {
+    if (error instanceof SessionBoxClientError && error.code === "CONTAINER_NOT_FOUND") {
       return false;
     }
     throw error;
@@ -82,7 +82,7 @@ function isBindingStore(value: unknown): value is BindingStore {
 
   return Object.values(value).every((record) => {
     if (typeof record !== "object" || record === null) return false;
-    const candidate = record as { sandboxId?: unknown; updatedAt?: unknown };
-    return typeof candidate.sandboxId === "string" && typeof candidate.updatedAt === "string";
+    const candidate = record as { containerId?: unknown; updatedAt?: unknown };
+    return typeof candidate.containerId === "string" && typeof candidate.updatedAt === "string";
   });
 }

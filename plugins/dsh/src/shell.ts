@@ -9,7 +9,7 @@ import type {
   ShellRunResult,
 } from "@deepseek-ai/dsh-shell";
 import { SessionBoxClientError } from "@sessionbox/client";
-import { toSandboxPath } from "@sessionbox/shared";
+import { toContainerPath } from "@sessionbox/shared";
 import type { SessionBoxRuntimeProvider } from "./connection.ts";
 
 export interface ShellServiceConfig {
@@ -22,7 +22,7 @@ export interface ShellServiceConfig {
 }
 
 /**
- * `ctx.shell` over the SessionBox agent protocol. Commands run in the sandbox;
+ * `ctx.shell` over the SessionBox agent protocol. Commands run in the container;
  * the agent protocol is request/response, so every execution is settled when
  * `execute` resolves: foreground results, incremental reads and observed
  * streams all work, while `kill()` reports "already finished" and expiry is
@@ -63,7 +63,7 @@ export class SessionBoxShell extends ShellExecutor {
 
   override async execute(spec: ShellExecSpec): Promise<ShellExecution> {
     const { runtime } = await this.connection().connect();
-    const workdir = toSandboxPath(spec.workdir, this.hostCwd, this.workspaceRoot);
+    const workdir = toContainerPath(spec.workdir, this.hostCwd, this.workspaceRoot);
     const limits = { stdoutMaxBytes: spec.stdoutMaxBytes, stderrMaxBytes: this.maxOutputBytes };
 
     if (isAborted(spec.signal)) {

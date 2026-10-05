@@ -6,11 +6,11 @@ function invalid(message: string): SessionBoxError {
 }
 
 /**
- * Normalizes a sandbox-side POSIX path and rejects anything that is not an
+ * Normalizes a container-side POSIX path and rejects anything that is not an
  * absolute, traversal-free path. Used by the file manager and the agent
  * protocol before any SSH/SFTP call (PROJECT.md §41.1, §42).
  */
-export function normalizeSandboxPath(input: string): string {
+export function normalizeContainerPath(input: string): string {
   if (input.trim() === "") throw invalid("path must not be empty");
   if (input.includes("\0")) throw invalid("path must not contain NUL bytes");
   if (!input.startsWith("/")) throw invalid("path must be absolute");
@@ -19,8 +19,8 @@ export function normalizeSandboxPath(input: string): string {
 }
 
 export function isWithinWorkspace(root: string, path: string): boolean {
-  const normalizedRoot = normalizeSandboxPath(root);
-  const normalizedPath = normalizeSandboxPath(path);
+  const normalizedRoot = normalizeContainerPath(root);
+  const normalizedPath = normalizeContainerPath(path);
 
   if (normalizedPath === normalizedRoot) return true;
   const rootPrefix = normalizedRoot === "/" ? "/" : `${normalizedRoot}/`;
@@ -33,7 +33,7 @@ export function isWithinWorkspace(root: string, path: string): boolean {
  * `/workspace/../../etc/passwd` normalize to `/etc/passwd` and are rejected.
  */
 export function resolveWithinWorkspace(input: string, root: string): string {
-  const path = normalizeSandboxPath(input);
+  const path = normalizeContainerPath(input);
   if (!isWithinWorkspace(root, path)) {
     throw invalid(`path must stay within ${root}`);
   }

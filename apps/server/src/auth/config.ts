@@ -12,7 +12,7 @@ export const ALL_PERMISSIONS = "*";
 
 /**
  * Parses `SESSIONBOX_CLIENTS` — a JSON array of
- * `{ "id": "dsh", "token": "...", "permissions": ["sandbox:create", ...] }`.
+ * `{ "id": "dsh", "token": "...", "permissions": ["container:create", ...] }`.
  * An empty configuration disables authentication (development default) and is
  * reported loudly at startup.
  */

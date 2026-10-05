@@ -1,9 +1,9 @@
 export interface SessionBoxPluginConfig {
   baseUrl: string;
   token?: string;
-  /** Pin every session to one existing sandbox (development/demo helper). */
-  pinnedSandboxId?: string;
-  /** Override the session→sandbox binding file location. */
+  /** Pin every session to one existing container (development/demo helper). */
+  pinnedContainerId?: string;
+  /** Override the session→container binding file location. */
   bindingsFile?: string;
   disabled: boolean;
 }
@@ -22,14 +22,14 @@ export function loadConfig(
   const env = options.env ?? process.env;
 
   const token = env.SESSIONBOX_TOKEN?.trim();
-  const pinnedSandboxId = env.SESSIONBOX_SANDBOX?.trim();
+  const pinnedContainerId = env.SESSIONBOX_CONTAINER?.trim() ?? env.SESSIONBOX_SANDBOX?.trim();
   const bindingsFile = env.SESSIONBOX_BINDINGS_FILE?.trim();
 
   return {
     baseUrl: env.SESSIONBOX_URL?.trim() || DEFAULT_BASE_URL,
     ...(token !== undefined && token !== "" ? { token } : {}),
-    ...(pinnedSandboxId !== undefined && pinnedSandboxId !== ""
-      ? { pinnedSandboxId }
+    ...(pinnedContainerId !== undefined && pinnedContainerId !== ""
+      ? { pinnedContainerId }
       : {}),
     ...(bindingsFile !== undefined && bindingsFile !== "" ? { bindingsFile } : {}),
     disabled: options.flagDisabled === true || env.SESSIONBOX_DISABLED === "1",

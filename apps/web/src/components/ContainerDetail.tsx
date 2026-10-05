@@ -1,31 +1,31 @@
 import { useCallback, useEffect, useState, type JSX } from "react";
-import type { Sandbox, UpdateSandboxSettingsRequest } from "@sessionbox/protocol";
+import type { Container, UpdateContainerSettingsRequest } from "@sessionbox/protocol";
 import { api } from "../api.ts";
 import { FileBrowser } from "./FileBrowser.tsx";
 import { TerminalPanel } from "./TerminalPanel.tsx";
-import { describeError } from "./SandboxList.tsx";
+import { describeError } from "./ContainerList.tsx";
 
 type Tab = "overview" | "files" | "terminal";
 
-export function SandboxDetail({
-  sandboxId,
+export function ContainerDetail({
+  containerId,
   onBack,
 }: {
-  sandboxId: string;
+  containerId: string;
   onBack: () => void;
 }): JSX.Element {
-  const [sandbox, setSandbox] = useState<Sandbox | null>(null);
+  const [container, setContainer] = useState<Container | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<Tab>("overview");
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
-      setSandbox(await api.get(sandboxId));
+      setContainer(await api.get(containerId));
     } catch (caught) {
       setError(describeError(caught));
     }
-  }, [sandboxId]);
+  }, [containerId]);
 
   useEffect(() => {
     void refresh();
@@ -46,11 +46,11 @@ export function SandboxDetail({
     }
   };
 
-  if (sandbox === null) {
+  if (container === null) {
     return (
       <div className="page">
         <button type="button" className="link-button" onClick={onBack}>
-          ← All sandboxes
+          ← All containers
         </button>
         {error !== null ? <div className="alert">{error}</div> : <p className="empty">Loading…</p>}
       </div>
@@ -58,9 +58,9 @@ export function SandboxDetail({
   }
 
   const onDelete = (): void => {
-    if (!window.confirm(`Delete sandbox "${sandbox.name}"? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete container "${container.name}"? This cannot be undone.`)) return;
     void run(async () => {
-      await api.remove(sandbox.id);
+      await api.remove(container.id);
       onBack();
     });
   };
@@ -70,31 +70,31 @@ export function SandboxDetail({
       <header className="header">
         <div>
           <button type="button" className="link-button" onClick={onBack}>
-            ← All sandboxes
+            ← All containers
           </button>
-          <h1>{sandbox.name}</h1>
+          <h1>{container.name}</h1>
           <p className="subtitle">
-            <span className={`status status-${sandbox.status}`}>{sandbox.status}</span>{" "}
-            <span className="mono">{sandbox.id}</span>
+            <span className={`status status-${container.status}`}>{container.status}</span>{" "}
+            <span className="mono">{container.id}</span>
           </p>
         </div>
         <div className="actions">
-          {sandbox.status === "stopped" || sandbox.status === "failed" ? (
-            <button type="button" disabled={busy} onClick={() => void run(() => api.start(sandbox.id))}>
+          {container.status === "stopped" || container.status === "failed" ? (
+            <button type="button" disabled={busy} onClick={() => void run(() => api.start(container.id))}>
               Start
             </button>
           ) : null}
-          {sandbox.status === "running" ? (
-            <button type="button" disabled={busy} onClick={() => void run(() => api.stop(sandbox.id))}>
+          {container.status === "running" ? (
+            <button type="button" disabled={busy} onClick={() => void run(() => api.stop(container.id))}>
               Stop
             </button>
           ) : null}
-          {sandbox.status === "running" || sandbox.status === "stopped" ? (
+          {container.status === "running" || container.status === "stopped" ? (
             <button
               type="button"
               className="secondary"
               disabled={busy}
-              onClick={() => void run(() => api.restart(sandbox.id))}
+              onClick={() => void run(() => api.restart(container.id))}
             >
               Restart
             </button>
@@ -129,28 +129,28 @@ export function SandboxDetail({
 
       {tab === "overview" ? (
         <Overview
-          sandbox={sandbox}
+          container={container}
           busy={busy}
-          onSave={(patch) => void run(() => api.updateSettings(sandbox.id, patch))}
+          onSave={(patch) => void run(() => api.updateSettings(container.id, patch))}
         />
       ) : null}
 
       {tab === "files" ? (
-        sandbox.status === "running" ? (
-          <FileBrowser sandboxId={sandbox.id} />
+        container.status === "running" ? (
+          <FileBrowser containerId={container.id} />
         ) : (
           <section className="card">
-            <p className="empty">Start the sandbox to browse its files.</p>
+            <p className="empty">Start the container to browse its files.</p>
           </section>
         )
       ) : null}
 
       {tab === "terminal" ? (
-        sandbox.status === "running" ? (
-          <TerminalPanel sandboxId={sandbox.id} />
+        container.status === "running" ? (
+          <TerminalPanel containerId={container.id} />
         ) : (
           <section className="card">
-            <p className="empty">Start the sandbox to open a terminal.</p>
+            <p className="empty">Start the container to open a terminal.</p>
           </section>
         )
       ) : null}
@@ -159,31 +159,31 @@ export function SandboxDetail({
 }
 
 function Overview({
-  sandbox,
+  container,
   busy,
   onSave,
 }: {
-  sandbox: Sandbox;
+  container: Container;
   busy: boolean;
-  onSave: (patch: UpdateSandboxSettingsRequest) => void;
+  onSave: (patch: UpdateContainerSettingsRequest) => void;
 }): JSX.Element {
-  const [autoStop, setAutoStop] = useState(sandbox.lifecycle.autoStop);
+  const [autoStop, setAutoStop] = useState(container.lifecycle.autoStop);
   const [idleMinutes, setIdleMinutes] = useState(
-    sandbox.lifecycle.idleTimeoutSeconds !== undefined
-      ? String(Math.round(sandbox.lifecycle.idleTimeoutSeconds / 60))
+    container.lifecycle.idleTimeoutSeconds !== undefined
+      ? String(Math.round(container.lifecycle.idleTimeoutSeconds / 60))
       : "",
   );
-  const [deleteAfterStop, setDeleteAfterStop] = useState(sandbox.lifecycle.deleteAfterStop);
+  const [deleteAfterStop, setDeleteAfterStop] = useState(container.lifecycle.deleteAfterStop);
 
   useEffect(() => {
-    setAutoStop(sandbox.lifecycle.autoStop);
+    setAutoStop(container.lifecycle.autoStop);
     setIdleMinutes(
-      sandbox.lifecycle.idleTimeoutSeconds !== undefined
-        ? String(Math.round(sandbox.lifecycle.idleTimeoutSeconds / 60))
+      container.lifecycle.idleTimeoutSeconds !== undefined
+        ? String(Math.round(container.lifecycle.idleTimeoutSeconds / 60))
         : "",
     );
-    setDeleteAfterStop(sandbox.lifecycle.deleteAfterStop);
-  }, [sandbox]);
+    setDeleteAfterStop(container.lifecycle.deleteAfterStop);
+  }, [container]);
 
   const save = (): void => {
     const minutes = idleMinutes.trim() === "" ? null : Number(idleMinutes);
@@ -203,27 +203,27 @@ function Overview({
       <section className="card">
         <h2>Overview</h2>
         <dl className="details">
-          <dt>Sandbox ID</dt>
-          <dd className="mono">{sandbox.id}</dd>
+          <dt>Container ID</dt>
+          <dd className="mono">{container.id}</dd>
           <dt>Image</dt>
-          <dd className="mono">{sandbox.image}</dd>
+          <dd className="mono">{container.image}</dd>
           <dt>Runtime</dt>
-          <dd>{sandbox.runtime}</dd>
+          <dd>{container.runtime}</dd>
           <dt>Workspace</dt>
-          <dd className="mono">{sandbox.workspace}</dd>
+          <dd className="mono">{container.workspace}</dd>
           <dt>Created</dt>
-          <dd>{formatDate(sandbox.createdAt)}</dd>
+          <dd>{formatDate(container.createdAt)}</dd>
           <dt>Started</dt>
-          <dd>{formatDate(sandbox.startedAt)}</dd>
+          <dd>{formatDate(container.startedAt)}</dd>
           <dt>Last activity</dt>
-          <dd>{formatDate(sandbox.lastActivityAt)}</dd>
+          <dd>{formatDate(container.lastActivityAt)}</dd>
           <dt>Resources</dt>
           <dd>
-            {sandbox.resources.cpuLimit ?? "unlimited"} CPU ·{" "}
-            {sandbox.resources.memoryLimitMb ?? "unlimited"} MB
+            {container.resources.cpuLimit ?? "unlimited"} CPU ·{" "}
+            {container.resources.memoryLimitMb ?? "unlimited"} MB
           </dd>
           <dt>Active connections</dt>
-          <dd>{sandbox.activeConnections}</dd>
+          <dd>{container.activeConnections}</dd>
         </dl>
       </section>
 
@@ -262,7 +262,7 @@ function Overview({
         </div>
         <p className="hint">
           Lifecycle is enforced by SessionBox, not by the agent. A plugin disconnect never stops the
-          sandbox.
+          container.
         </p>
       </section>
     </>

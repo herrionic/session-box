@@ -1,12 +1,12 @@
 import type {
-  CreateSandboxRequest,
+  CreateContainerRequest,
   ErrorResponse,
   HealthResponse,
-  Sandbox,
-  UpdateSandboxSettingsRequest,
+  Container,
+  UpdateContainerSettingsRequest,
 } from "@sessionbox/protocol";
 import { SessionBoxClientError } from "./errors.ts";
-import { SandboxRuntime } from "./runtime.ts";
+import { ContainerRuntime } from "./runtime.ts";
 import { defaultWebSocketFactory, type WebSocketFactory } from "./websocket.ts";
 
 export interface SessionBoxClientOptions {
@@ -47,50 +47,50 @@ export class SessionBoxClient {
     return await this.request("/api/health");
   }
 
-  async listSandboxes(): Promise<Sandbox[]> {
-    return await this.request("/api/sandboxes");
+  async listContainers(): Promise<Container[]> {
+    return await this.request("/api/containers");
   }
 
-  async createSandbox(input: CreateSandboxRequest = {}): Promise<Sandbox> {
-    return await this.request("/api/sandboxes", {
+  async createContainer(input: CreateContainerRequest = {}): Promise<Container> {
+    return await this.request("/api/containers", {
       method: "POST",
       body: JSON.stringify(input),
     });
   }
 
-  async getSandbox(id: string): Promise<Sandbox> {
-    return await this.request(`/api/sandboxes/${encodeURIComponent(id)}`);
+  async getContainer(id: string): Promise<Container> {
+    return await this.request(`/api/containers/${encodeURIComponent(id)}`);
   }
 
-  async startSandbox(id: string): Promise<Sandbox> {
-    return await this.request(`/api/sandboxes/${encodeURIComponent(id)}/start`, { method: "POST" });
+  async startContainer(id: string): Promise<Container> {
+    return await this.request(`/api/containers/${encodeURIComponent(id)}/start`, { method: "POST" });
   }
 
-  async stopSandbox(id: string): Promise<Sandbox> {
-    return await this.request(`/api/sandboxes/${encodeURIComponent(id)}/stop`, { method: "POST" });
+  async stopContainer(id: string): Promise<Container> {
+    return await this.request(`/api/containers/${encodeURIComponent(id)}/stop`, { method: "POST" });
   }
 
-  async restartSandbox(id: string): Promise<Sandbox> {
-    return await this.request(`/api/sandboxes/${encodeURIComponent(id)}/restart`, {
+  async restartContainer(id: string): Promise<Container> {
+    return await this.request(`/api/containers/${encodeURIComponent(id)}/restart`, {
       method: "POST",
     });
   }
 
-  async deleteSandbox(id: string): Promise<void> {
-    await this.request(`/api/sandboxes/${encodeURIComponent(id)}`, { method: "DELETE" });
+  async deleteContainer(id: string): Promise<void> {
+    await this.request(`/api/containers/${encodeURIComponent(id)}`, { method: "DELETE" });
   }
 
-  async updateSandboxSettings(id: string, patch: UpdateSandboxSettingsRequest): Promise<Sandbox> {
-    return await this.request(`/api/sandboxes/${encodeURIComponent(id)}/settings`, {
+  async updateContainerSettings(id: string, patch: UpdateContainerSettingsRequest): Promise<Container> {
+    return await this.request(`/api/containers/${encodeURIComponent(id)}/settings`, {
       method: "PATCH",
       body: JSON.stringify(patch),
     });
   }
 
-  /** Opens an agent-protocol connection to a sandbox. */
-  async connect(sandboxId: string): Promise<SandboxRuntime> {
-    const runtime = new SandboxRuntime({
-      sandboxId,
+  /** Opens an agent-protocol connection to a container. */
+  async connect(containerId: string): Promise<ContainerRuntime> {
+    const runtime = new ContainerRuntime({
+      containerId,
       url: this.agentUrl(),
       webSocketFactory: this.webSocketFactory,
       requestTimeoutMs: this.requestTimeoutMs,

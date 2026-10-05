@@ -1,13 +1,14 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { EncryptedCredentialStore } from "../src/credentials/store.ts";
-import { SandboxService } from "../src/sandbox/service.ts";
+import { ContainerService } from "../src/container/service.ts";
 import { SSH_PRIVATE_KEY_CREDENTIAL } from "../src/ssh/keypair.ts";
 import { SshSessionManager } from "../src/ssh/manager.ts";
 import { openDatabase, SCHEMA_VERSION } from "../src/storage/database.ts";
-import { SqliteSandboxRepository } from "../src/storage/sandbox-repository.ts";
+import { SqliteContainerRepository } from "../src/storage/container-repository.ts";
 import { SqliteSecretRepository } from "../src/storage/secret-repository.ts";
 import { FakeRuntime } from "./helpers/fake-runtime.ts";
 import { FakeSshSessionFactory } from "./helpers/fake-ssh.ts";
@@ -30,7 +31,7 @@ async function tempDatabaseFile(): Promise<string> {
 }
 
 interface ServiceInstance {
-  service: SandboxService;
+  service: ContainerService;
   credentials: EncryptedCredentialStore;
   close: () => void;
 }
@@ -40,9 +41,9 @@ function createService(runtime: FakeRuntime, databaseFile: string): ServiceInsta
   const ssh = new FakeSshSessionFactory();
   const database = openDatabase(databaseFile);
   const credentials = new EncryptedCredentialStore(TEST_KEY, new SqliteSecretRepository(database));
-  const service = new SandboxService({
+  const service = new ContainerService({
     runtime,
-    repository: new SqliteSandboxRepository(database),
+    repository: new SqliteContainerRepository(database),
     credentials,
     ssh,
     sessions: new SshSessionManager(ssh, logger),
@@ -58,8 +59,8 @@ function createService(runtime: FakeRuntime, databaseFile: string): ServiceInsta
 }
 
 describe("SQLite persistence", () => {
-  it("reports schema version 1 and opens idempotently", async () => {
-    expect(SCHEMA_VERSION).toBe(1);
+  it("reports schema version 2 and opens idempotently", async () => {
+    expect(SCHEMA_VERSION).toBe(2);
 
     const file = await tempDatabaseFile();
     const first = openDatabase(file);
@@ -68,7 +69,41 @@ describe("SQLite persistence", () => {
     second.close();
   });
 
-  it("keeps sandboxes manageable across a server restart", async () => {
+  it("migrates a v1 database: the legacy table is renamed to containers", async () => {
+    const file = await tempDatabaseFile();
+    const raw = new DatabaseSync(file);
+    raw.exec(`
+      CREATE TABLE sandboxes (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, image TEXT NOT NULL, runtime TEXT NOT NULL,
+        status TEXT NOT NULL, workspace TEXT NOT NULL, resources TEXT NOT NULL,
+        lifecycle TEXT NOT NULL, created_at TEXT NOT NULL, started_at TEXT, stopped_at TEXT,
+        last_activity_at TEXT, active_connections INTEGER NOT NULL DEFAULT 0, runtime_ref TEXT
+      );
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO meta (key, value) VALUES ('schema_version', '1');
+      INSERT INTO sandboxes VALUES (
+        'sbx_legacy', 'legacy', 'img', 'docker', 'stopped', '/workspace',
+        '{}', '{"autoStop":false,"deleteAfterStop":false}', '2026-01-01T00:00:00.000Z',
+        NULL, NULL, NULL, 0, NULL
+      );
+    `);
+    raw.close();
+
+    const migrated = openDatabase(file);
+    const rows = migrated.prepare("SELECT id, name FROM containers").all() as Array<{
+      id: string;
+      name: string;
+    }>;
+    expect(rows).toEqual([{ id: "sbx_legacy", name: "legacy" }]);
+
+    const version = migrated
+      .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+      .get() as { value: string };
+    expect(version.value).toBe("2");
+    migrated.close();
+  });
+
+  it("keeps containers manageable across a server restart", async () => {
     const runtime = new FakeRuntime();
     const file = await tempDatabaseFile();
 
@@ -93,7 +128,7 @@ describe("SQLite persistence", () => {
     // The encrypted private key survived the restart.
     expect(await after.credentials.read(kept.id, SSH_PRIVATE_KEY_CREDENTIAL)).toBe(keyBefore);
 
-    // And the sandbox is still manageable.
+    // And the container is still manageable.
     await after.service.stop(kept.id);
     expect((await after.service.get(kept.id)).status).toBe("stopped");
     await after.service.start(kept.id);
@@ -109,13 +144,13 @@ describe("SQLite persistence", () => {
     const empty = createService(runtime, file);
     empty.close();
 
-    runtime.containers.set("ref_orphan", { sandboxId: "sbx_orphan", status: "running" });
+    runtime.containers.set("ref_orphan", { containerId: "ctr_orphan", status: "running" });
 
     const after = createService(runtime, file);
     await after.service.reconcile();
 
     const records = await after.service.list();
-    expect(records.map((record) => record.id)).toEqual(["sbx_orphan"]);
+    expect(records.map((record) => record.id)).toEqual(["ctr_orphan"]);
     expect(records[0]).toMatchObject({ status: "running", runtimeRef: "ref_orphan" });
 
     after.close();

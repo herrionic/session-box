@@ -12,8 +12,8 @@ export function newUlid(now: number = Date.now()): string {
   return `${encodeBase32(time, 10)}${encodeBase32(random, 16)}`;
 }
 
-export function newSandboxId(now: number = Date.now()): string {
-  return `sbx_${newUlid(now)}`;
+export function newContainerId(now: number = Date.now()): string {
+  return `ctr_${newUlid(now)}`;
 }
 
 export function newRequestId(): string {

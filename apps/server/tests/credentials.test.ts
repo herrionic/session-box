@@ -61,32 +61,32 @@ describe("credential store", () => {
   it("stores encrypted entries and reads them back", async () => {
     const store = new InMemoryCredentialStore(masterKey);
 
-    await store.save("sbx_1", "ssh-private-key", "PRIVATE");
-    await store.save("sbx_2", "ssh-private-key", "OTHER");
+    await store.save("ctr_1", "ssh-private-key", "PRIVATE");
+    await store.save("ctr_2", "ssh-private-key", "OTHER");
 
-    expect(await store.read("sbx_1", "ssh-private-key")).toBe("PRIVATE");
-    expect(await store.read("sbx_2", "ssh-private-key")).toBe("OTHER");
-    expect(await store.read("sbx_1", "missing")).toBeUndefined();
+    expect(await store.read("ctr_1", "ssh-private-key")).toBe("PRIVATE");
+    expect(await store.read("ctr_2", "ssh-private-key")).toBe("OTHER");
+    expect(await store.read("ctr_1", "missing")).toBeUndefined();
   });
 
   it("removes entries", async () => {
     const store = new InMemoryCredentialStore(masterKey);
-    await store.save("sbx_1", "a", "1");
-    await store.save("sbx_1", "b", "2");
-    await store.save("sbx_2", "a", "3");
+    await store.save("ctr_1", "a", "1");
+    await store.save("ctr_1", "b", "2");
+    await store.save("ctr_2", "a", "3");
 
-    await store.remove("sbx_1", "a");
-    expect(await store.read("sbx_1", "a")).toBeUndefined();
-    expect(await store.read("sbx_1", "b")).toBe("2");
+    await store.remove("ctr_1", "a");
+    expect(await store.read("ctr_1", "a")).toBeUndefined();
+    expect(await store.read("ctr_1", "b")).toBe("2");
 
-    await store.removeAll("sbx_1");
-    expect(await store.read("sbx_1", "b")).toBeUndefined();
-    expect(await store.read("sbx_2", "a")).toBe("3");
+    await store.removeAll("ctr_1");
+    expect(await store.read("ctr_1", "b")).toBeUndefined();
+    expect(await store.read("ctr_2", "a")).toBe("3");
   });
 
   it("refuses to store credentials without a master key", async () => {
     const store = new InMemoryCredentialStore(undefined);
-    await expect(store.save("sbx_1", "ssh-private-key", "PRIVATE")).rejects.toMatchObject({
+    await expect(store.save("ctr_1", "ssh-private-key", "PRIVATE")).rejects.toMatchObject({
       code: "INTERNAL_ERROR",
     });
   });

@@ -4,11 +4,11 @@ import WebSocket from "ws";
 import { AgentGateway } from "../src/agent/gateway.ts";
 import type { ServerConfig } from "../src/config.ts";
 import { InMemoryCredentialStore } from "../src/credentials/store.ts";
-import { SandboxFilesService } from "../src/files/service.ts";
+import { ContainerFilesService } from "../src/files/service.ts";
 import { buildApp } from "../src/http/app.ts";
 import type { SessionBoxApp } from "../src/http/types.ts";
-import { InMemorySandboxRepository } from "../src/sandbox/repository.ts";
-import { SandboxService } from "../src/sandbox/service.ts";
+import { InMemoryContainerRepository } from "../src/container/repository.ts";
+import { ContainerService } from "../src/container/service.ts";
 import { SshSessionManager } from "../src/ssh/manager.ts";
 import { FakeRuntime } from "./helpers/fake-runtime.ts";
 import { FakeSshSessionFactory } from "./helpers/fake-ssh.ts";
@@ -41,10 +41,10 @@ interface Fixture {
 async function createFixture(): Promise<Fixture> {
   const runtime = new FakeRuntime();
   const logger = createTestLogger();
-  const ssh = new FakeSshSessionFactory({ perSandbox: true });
-  const service = new SandboxService({
+  const ssh = new FakeSshSessionFactory({ perContainer: true });
+  const service = new ContainerService({
     runtime,
-    repository: new InMemorySandboxRepository(),
+    repository: new InMemoryContainerRepository(),
     credentials: new InMemoryCredentialStore(Buffer.alloc(32, 11)),
     ssh,
     sessions: new SshSessionManager(ssh, logger),
@@ -55,8 +55,8 @@ async function createFixture(): Promise<Fixture> {
     sshRetryIntervalMs: 1,
     sleep: async () => {},
   });
-  const files = new SandboxFilesService({
-    sandboxes: service,
+  const files = new ContainerFilesService({
+    containers: service,
     workspace: testConfig.docker.workspace,
     logger,
   });
@@ -124,8 +124,8 @@ describe("agent protocol (simulated harness sessions)", () => {
     const { app, client, ssh } = await createFixture();
     cleanups.push(() => app.close());
 
-    const sessionA = await client.createSandbox({ name: "session-a" });
-    const sessionB = await client.createSandbox({ name: "session-b" });
+    const sessionA = await client.createContainer({ name: "session-a" });
+    const sessionB = await client.createContainer({ name: "session-b" });
 
     const runtimeA = await client.connect(sessionA.id);
     const runtimeB = await client.connect(sessionB.id);
@@ -147,22 +147,22 @@ describe("agent protocol (simulated harness sessions)", () => {
     await runtimeA.close();
     await runtimeB.close();
 
-    // A disconnect is temporary access ending, not sandbox ownership (PROJECT §39).
-    expect((await client.getSandbox(sessionA.id)).status).toBe("running");
-    expect((await client.getSandbox(sessionB.id)).status).toBe("running");
+    // A disconnect is temporary access ending, not container ownership (PROJECT §39).
+    expect((await client.getContainer(sessionA.id)).status).toBe("running");
+    expect((await client.getContainer(sessionB.id)).status).toBe("running");
   });
 
-  it("reconnects a session to the same sandbox and workspace", async () => {
+  it("reconnects a session to the same container and workspace", async () => {
     const { app, client } = await createFixture();
     cleanups.push(() => app.close());
 
-    const sandbox = await client.createSandbox({ name: "session-c" });
+    const container = await client.createContainer({ name: "session-c" });
 
-    const first = await client.connect(sandbox.id);
+    const first = await client.connect(container.id);
     await first.writeFile("/workspace/keep.txt", "persisted");
     await first.close();
 
-    const second = await client.connect(sandbox.id);
+    const second = await client.connect(container.id);
     expect((await second.readFile("/workspace/keep.txt")).content).toBe("persisted");
     await second.close();
   });
@@ -171,8 +171,8 @@ describe("agent protocol (simulated harness sessions)", () => {
     const { app, client } = await createFixture();
     cleanups.push(() => app.close());
 
-    const sandbox = await client.createSandbox({});
-    const runtime = await client.connect(sandbox.id);
+    const container = await client.createContainer({});
+    const runtime = await client.connect(container.id);
 
     await runtime.mkdir("/workspace/deep/nested", { recursive: true });
     await runtime.writeFile("/workspace/deep/nested/file.txt", "hello");
@@ -190,12 +190,12 @@ describe("agent protocol (simulated harness sessions)", () => {
     await runtime.close();
   });
 
-  it("rejects relative paths and unknown sandboxes", async () => {
+  it("rejects relative paths and unknown containers", async () => {
     const { app, client } = await createFixture();
     cleanups.push(() => app.close());
 
-    const sandbox = await client.createSandbox({});
-    const runtime = await client.connect(sandbox.id);
+    const container = await client.createContainer({});
+    const runtime = await client.connect(container.id);
 
     await expect(runtime.readFile("relative.txt")).rejects.toMatchObject({
       code: "INVALID_REQUEST",
@@ -204,22 +204,22 @@ describe("agent protocol (simulated harness sessions)", () => {
       code: "INVALID_REQUEST",
     });
 
-    const missing = await client.connect("sbx_missing");
-    await expect(missing.exec("true")).rejects.toMatchObject({ code: "SANDBOX_NOT_FOUND" });
+    const missing = await client.connect("ctr_missing");
+    await expect(missing.exec("true")).rejects.toMatchObject({ code: "CONTAINER_NOT_FOUND" });
 
     await runtime.close();
     await missing.close();
   });
 
-  it("requires a running sandbox", async () => {
+  it("requires a running container", async () => {
     const { app, client } = await createFixture();
     cleanups.push(() => app.close());
 
-    const sandbox = await client.createSandbox({});
-    await client.stopSandbox(sandbox.id);
+    const container = await client.createContainer({});
+    await client.stopContainer(container.id);
 
-    const runtime = await client.connect(sandbox.id);
-    await expect(runtime.exec("true")).rejects.toMatchObject({ code: "SANDBOX_NOT_RUNNING" });
+    const runtime = await client.connect(container.id);
+    await expect(runtime.exec("true")).rejects.toMatchObject({ code: "CONTAINER_NOT_RUNNING" });
     await runtime.close();
   });
 
@@ -249,13 +249,13 @@ describe("agent protocol (simulated harness sessions)", () => {
       raw.socket.close();
     });
 
-    raw.socket.send(JSON.stringify({ type: "hello", protocolVersion: 1 }));
-    expect(await raw.next()).toMatchObject({ type: "welcome", protocolVersion: 1 });
+    raw.socket.send(JSON.stringify({ type: "hello", protocolVersion: 2 }));
+    expect(await raw.next()).toMatchObject({ type: "welcome", protocolVersion: 2 });
 
     raw.socket.send("not json");
     expect(await raw.next()).toMatchObject({ type: "error", code: "INVALID_REQUEST" });
 
-    raw.socket.send(JSON.stringify({ type: "exec", requestId: "r1", sandboxId: "sbx_x" }));
+    raw.socket.send(JSON.stringify({ type: "exec", requestId: "r1", containerId: "ctr_x" }));
     const malformed = await raw.next();
     expect(malformed).toMatchObject({ type: "error", code: "INVALID_REQUEST", requestId: "r1" });
   });

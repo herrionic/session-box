@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { InMemoryCredentialStore } from "../src/credentials/store.ts";
 import { SessionBoxError } from "../src/errors.ts";
-import { InMemorySandboxRepository } from "../src/sandbox/repository.ts";
-import { SandboxService } from "../src/sandbox/service.ts";
-import { toPublicSandbox } from "../src/sandbox/types.ts";
+import { InMemoryContainerRepository } from "../src/container/repository.ts";
+import { ContainerService } from "../src/container/service.ts";
+import { toPublicContainer } from "../src/container/types.ts";
 import { SSH_PRIVATE_KEY_CREDENTIAL } from "../src/ssh/keypair.ts";
 import { SshSessionManager } from "../src/ssh/manager.ts";
 import { FakeRuntime } from "./helpers/fake-runtime.ts";
@@ -14,20 +14,20 @@ const TEST_MASTER_KEY = Buffer.alloc(32, 7);
 
 function createFixture(options: { masterKey?: Buffer | null } = {}): {
   runtime: FakeRuntime;
-  repository: InMemorySandboxRepository;
+  repository: InMemoryContainerRepository;
   credentials: InMemoryCredentialStore;
   ssh: FakeSshSessionFactory;
-  service: SandboxService;
+  service: ContainerService;
 } {
   const masterKey =
     options.masterKey === undefined ? TEST_MASTER_KEY : (options.masterKey ?? undefined);
 
   const runtime = new FakeRuntime();
-  const repository = new InMemorySandboxRepository();
+  const repository = new InMemoryContainerRepository();
   const credentials = new InMemoryCredentialStore(masterKey);
   const logger = createTestLogger();
   const ssh = new FakeSshSessionFactory();
-  const service = new SandboxService({
+  const service = new ContainerService({
     runtime,
     repository,
     credentials,
@@ -44,8 +44,8 @@ function createFixture(options: { masterKey?: Buffer | null } = {}): {
   return { runtime, repository, credentials, ssh, service };
 }
 
-describe("SandboxService.create", () => {
-  it("creates a running sandbox with defaults", async () => {
+describe("ContainerService.create", () => {
+  it("creates a running container with defaults", async () => {
     const { service, runtime } = createFixture();
 
     const record = await service.create({});
@@ -54,11 +54,11 @@ describe("SandboxService.create", () => {
     expect(record.image).toBe("sessionbox/base:test");
     expect(record.runtime).toBe("fake");
     expect(record.workspace).toBe("/workspace");
-    expect(record.name).toMatch(/^sandbox-[0-9a-z]{6}$/);
+    expect(record.name).toMatch(/^container-[0-9a-z]{6}$/);
     expect(record.lifecycle).toEqual({ autoStop: false, deleteAfterStop: false });
     expect(record.runtimeRef).toBe(`fake_${record.id}`);
     expect(runtime.containers.get(record.runtimeRef!)?.status).toBe("running");
-    expect(runtime.createCalls[0]?.sandboxId).toBe(record.id);
+    expect(runtime.createCalls[0]?.containerId).toBe(record.id);
   });
 
   it("stores an encrypted private key and injects only the public key", async () => {
@@ -102,11 +102,11 @@ describe("SandboxService.create", () => {
     expect(record.resources).toEqual({ cpuLimit: 1, memoryLimitMb: 1024, pidsLimit: 512 });
   });
 
-  it("marks the sandbox failed when the runtime cannot create it", async () => {
+  it("marks the container failed when the runtime cannot create it", async () => {
     const { service, runtime } = createFixture();
     runtime.failNextCreate = true;
 
-    await expect(service.create({})).rejects.toMatchObject({ code: "SANDBOX_CREATE_FAILED" });
+    await expect(service.create({})).rejects.toMatchObject({ code: "CONTAINER_CREATE_FAILED" });
 
     const records = await service.list();
     expect(records).toHaveLength(1);
@@ -118,18 +118,18 @@ describe("SandboxService.create", () => {
     const { service, runtime } = createFixture();
     runtime.failNextStart = true;
 
-    await expect(service.create({})).rejects.toMatchObject({ code: "SANDBOX_CREATE_FAILED" });
+    await expect(service.create({})).rejects.toMatchObject({ code: "CONTAINER_CREATE_FAILED" });
 
     const records = await service.list();
     expect(records[0]?.status).toBe("failed");
     expect(records[0]?.runtimeRef).toBe(`fake_${records[0]?.id}`);
   });
 
-  it("fails the sandbox when SSH never becomes ready", async () => {
+  it("fails the container when SSH never becomes ready", async () => {
     const { service, ssh } = createFixture();
     ssh.alwaysFail = true;
 
-    await expect(service.create({})).rejects.toMatchObject({ code: "SANDBOX_CREATE_FAILED" });
+    await expect(service.create({})).rejects.toMatchObject({ code: "CONTAINER_CREATE_FAILED" });
 
     const records = await service.list();
     expect(records[0]?.status).toBe("failed");
@@ -143,8 +143,8 @@ describe("SandboxService.create", () => {
   });
 });
 
-describe("SandboxService lifecycle", () => {
-  it("stops, starts and restarts a sandbox", async () => {
+describe("ContainerService lifecycle", () => {
+  it("stops, starts and restarts a container", async () => {
     const { service, runtime } = createFixture();
     const record = await service.create({});
     const ref = record.runtimeRef;
@@ -175,13 +175,13 @@ describe("SandboxService lifecycle", () => {
     await expect(service.stop(record.id)).rejects.toMatchObject({ code: "INVALID_STATE" });
   });
 
-  it("rejects unknown sandbox ids", async () => {
+  it("rejects unknown container ids", async () => {
     const { service } = createFixture();
-    await expect(service.get("sbx_missing")).rejects.toBeInstanceOf(SessionBoxError);
-    await expect(service.stop("sbx_missing")).rejects.toMatchObject({ code: "SANDBOX_NOT_FOUND" });
+    await expect(service.get("ctr_missing")).rejects.toBeInstanceOf(SessionBoxError);
+    await expect(service.stop("ctr_missing")).rejects.toMatchObject({ code: "CONTAINER_NOT_FOUND" });
   });
 
-  it("serializes concurrent operations on the same sandbox", async () => {
+  it("serializes concurrent operations on the same container", async () => {
     const { service } = createFixture();
     const record = await service.create({});
     await service.stop(record.id);
@@ -197,7 +197,7 @@ describe("SandboxService lifecycle", () => {
     expect(reason.code).toBe("INVALID_STATE");
   });
 
-  it("deletes the sandbox record and its container", async () => {
+  it("deletes the container record and its container", async () => {
     const { service, runtime } = createFixture();
     const record = await service.create({});
     const ref = record.runtimeRef;
@@ -205,10 +205,10 @@ describe("SandboxService lifecycle", () => {
     await service.remove(record.id);
 
     expect(runtime.containers.has(ref!)).toBe(false);
-    await expect(service.get(record.id)).rejects.toMatchObject({ code: "SANDBOX_NOT_FOUND" });
+    await expect(service.get(record.id)).rejects.toMatchObject({ code: "CONTAINER_NOT_FOUND" });
   });
 
-  it("removes stored credentials when a sandbox is deleted", async () => {
+  it("removes stored credentials when a container is deleted", async () => {
     const { service, credentials } = createFixture();
     const record = await service.create({});
     expect(await credentials.read(record.id, SSH_PRIVATE_KEY_CREDENTIAL)).toBeDefined();
@@ -236,8 +236,8 @@ describe("SandboxService lifecycle", () => {
   });
 });
 
-describe("SandboxService settings", () => {
-  it("renames a sandbox and patches lifecycle policy", async () => {
+describe("ContainerService settings", () => {
+  it("renames a container and patches lifecycle policy", async () => {
     const { service } = createFixture();
     const record = await service.create({});
 
@@ -266,7 +266,7 @@ describe("SandboxService settings", () => {
   });
 });
 
-describe("SandboxService.reconcile", () => {
+describe("ContainerService.reconcile", () => {
   it("syncs status changes made outside the server", async () => {
     const { service, runtime } = createFixture();
     const record = await service.create({});
@@ -277,7 +277,7 @@ describe("SandboxService.reconcile", () => {
     expect((await service.get(record.id)).status).toBe("stopped");
   });
 
-  it("marks sandboxes whose container disappeared as failed", async () => {
+  it("marks containers whose container disappeared as failed", async () => {
     const { service, runtime } = createFixture();
     const record = await service.create({});
 
@@ -287,7 +287,7 @@ describe("SandboxService.reconcile", () => {
     expect((await service.get(record.id)).status).toBe("failed");
   });
 
-  it("does nothing when there are no persisted sandboxes", async () => {
+  it("does nothing when there are no persisted containers", async () => {
     const { service } = createFixture();
     await expect(service.reconcile()).resolves.toBeUndefined();
   });
@@ -297,10 +297,10 @@ describe("public projection", () => {
   it("never exposes the runtime handle", async () => {
     const { service } = createFixture();
     const record = await service.create({});
-    const publicSandbox = toPublicSandbox(record);
+    const publicContainer = toPublicContainer(record);
 
-    expect(publicSandbox).not.toHaveProperty("runtimeRef");
-    expect(Object.keys(publicSandbox).sort()).toEqual(
+    expect(publicContainer).not.toHaveProperty("runtimeRef");
+    expect(Object.keys(publicContainer).sort()).toEqual(
       [
         "activeConnections",
         "createdAt",

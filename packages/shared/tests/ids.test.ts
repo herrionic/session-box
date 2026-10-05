@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { newRequestId, newSandboxId, newUlid, nowIso } from "../src/index.ts";
+import { newRequestId, newContainerId, newUlid, nowIso } from "../src/index.ts";
 
 const CROCKFORD = /^[0-9A-HJKMNP-TV-Z]+$/;
 
@@ -10,21 +10,21 @@ describe("ids", () => {
     expect(ulid).toMatch(CROCKFORD);
   });
 
-  it("prefixes sandbox and request ids", () => {
-    expect(newSandboxId()).toMatch(/^sbx_[0-9A-HJKMNP-TV-Z]{26}$/);
+  it("prefixes container and request ids", () => {
+    expect(newContainerId()).toMatch(/^ctr_[0-9A-HJKMNP-TV-Z]{26}$/);
     expect(newRequestId()).toMatch(/^req_[0-9A-HJKMNP-TV-Z]{26}$/);
   });
 
   it("is lexicographically ordered by timestamp", () => {
-    const earlier = newSandboxId(1_700_000_000_000);
-    const later = newSandboxId(1_700_000_000_001);
+    const earlier = newContainerId(1_700_000_000_000);
+    const later = newContainerId(1_700_000_000_001);
     expect(earlier < later).toBe(true);
   });
 
   it("does not collide across many calls", () => {
     const ids = new Set<string>();
     for (let index = 0; index < 1000; index += 1) {
-      ids.add(newSandboxId());
+      ids.add(newContainerId());
     }
     expect(ids.size).toBe(1000);
   });

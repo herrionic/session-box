@@ -31,22 +31,22 @@ export interface FakeShell {
 /** Scriptable SSH session factory for service/file/probe tests (no sshd). */
 export class FakeSshSessionFactory implements SshSessionFactory {
   readonly requests: SshSessionRequest[] = [];
-  /** Shared session used when `perSandbox` is false. */
+  /** Shared session used when `perContainer` is false. */
   readonly session = new FakeSshSession();
-  private readonly sessionsBySandbox = new Map<string, FakeSshSession>();
-  private readonly perSandbox: boolean;
+  private readonly sessionsByContainer = new Map<string, FakeSshSession>();
+  private readonly perContainer: boolean;
 
   /** Fail this many attempts before reporting ready (readiness probe tests). */
   failuresBeforeSuccess = 0;
   alwaysFail = false;
 
-  constructor(options: { perSandbox?: boolean } = {}) {
-    this.perSandbox = options.perSandbox === true;
+  constructor(options: { perContainer?: boolean } = {}) {
+    this.perContainer = options.perContainer === true;
   }
 
-  /** The fake filesystem for one sandbox (isolation tests). */
-  sessionFor(sandboxId: string): FakeSshSession {
-    return this.sessionsBySandbox.get(sandboxId) ?? this.session;
+  /** The fake filesystem for one container (isolation tests). */
+  sessionFor(containerId: string): FakeSshSession {
+    return this.sessionsByContainer.get(containerId) ?? this.session;
   }
 
   async create(request: SshSessionRequest): Promise<SshSession> {
@@ -60,12 +60,12 @@ export class FakeSshSessionFactory implements SshSessionFactory {
       throw new SshUnavailableError("fake SSH is not ready yet");
     }
 
-    if (!this.perSandbox) return this.session;
+    if (!this.perContainer) return this.session;
 
-    let session = this.sessionsBySandbox.get(request.sandboxId);
+    let session = this.sessionsByContainer.get(request.containerId);
     if (session === undefined) {
       session = new FakeSshSession();
-      this.sessionsBySandbox.set(request.sandboxId, session);
+      this.sessionsByContainer.set(request.containerId, session);
     }
     return session;
   }

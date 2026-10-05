@@ -4,11 +4,11 @@ import { AgentGateway } from "../src/agent/gateway.ts";
 import { loadAuthConfig } from "../src/auth/config.ts";
 import type { ServerConfig } from "../src/config.ts";
 import { InMemoryCredentialStore } from "../src/credentials/store.ts";
-import { SandboxFilesService } from "../src/files/service.ts";
+import { ContainerFilesService } from "../src/files/service.ts";
 import { buildApp } from "../src/http/app.ts";
 import type { SessionBoxApp } from "../src/http/types.ts";
-import { InMemorySandboxRepository } from "../src/sandbox/repository.ts";
-import { SandboxService } from "../src/sandbox/service.ts";
+import { InMemoryContainerRepository } from "../src/container/repository.ts";
+import { ContainerService } from "../src/container/service.ts";
 import { SshSessionManager } from "../src/ssh/manager.ts";
 import { FakeRuntime } from "./helpers/fake-runtime.ts";
 import { FakeSshSessionFactory, type FakeShell } from "./helpers/fake-ssh.ts";
@@ -34,15 +34,15 @@ const testConfig: ServerConfig = {
 async function createFixture(options: { authClients?: string } = {}): Promise<{
   app: SessionBoxApp;
   port: number;
-  sandboxId: string;
+  containerId: string;
   shell: () => FakeShell | undefined;
 }> {
   const runtime = new FakeRuntime();
   const logger = createTestLogger();
   const ssh = new FakeSshSessionFactory();
-  const service = new SandboxService({
+  const service = new ContainerService({
     runtime,
-    repository: new InMemorySandboxRepository(),
+    repository: new InMemoryContainerRepository(),
     credentials: new InMemoryCredentialStore(Buffer.alloc(32, 7)),
     ssh,
     sessions: new SshSessionManager(ssh, logger),
@@ -53,8 +53,8 @@ async function createFixture(options: { authClients?: string } = {}): Promise<{
     sshRetryIntervalMs: 1,
     sleep: async () => {},
   });
-  const files = new SandboxFilesService({
-    sandboxes: service,
+  const files = new ContainerFilesService({
+    containers: service,
     workspace: testConfig.docker.workspace,
     logger,
   });
@@ -75,9 +75,9 @@ async function createFixture(options: { authClients?: string } = {}): Promise<{
 
   const address = app.server.address();
   const port = typeof address === "object" && address !== null ? address.port : 0;
-  const sandbox = await service.create({});
+  const container = await service.create({});
 
-  return { app, port, sandboxId: sandbox.id, shell: () => ssh.session.shells[0] };
+  return { app, port, containerId: container.id, shell: () => ssh.session.shells[0] };
 }
 
 interface TestSocket {
@@ -133,17 +133,17 @@ describe("terminal WebSocket", () => {
   });
 
   it("bridges input, output, resize and exit", async () => {
-    const { app, port, sandboxId, shell } = await createFixture();
+    const { app, port, containerId, shell } = await createFixture();
     cleanups.push(() => app.close());
 
     const client = await connect(
-      `ws://127.0.0.1:${port}/api/ws/terminal/${sandboxId}?cols=120&rows=30`,
+      `ws://127.0.0.1:${port}/api/ws/terminal/${containerId}?cols=120&rows=30`,
     );
     cleanups.push(async () => {
       client.socket.close();
     });
 
-    expect(await client.next()).toEqual({ type: "ready", sandboxId });
+    expect(await client.next()).toEqual({ type: "ready", containerId });
     expect(shell()?.cols).toBe(120);
     expect(shell()?.rows).toBe(30);
 
@@ -154,8 +154,8 @@ describe("terminal WebSocket", () => {
     client.socket.send(JSON.stringify({ type: "resize", cols: 100, rows: 40 }));
     await waitFor(() => shell()?.cols === 100 && shell()?.rows === 40);
 
-    shell()?.emit("Linux sandbox\n");
-    expect(await client.next()).toEqual({ type: "output", data: "Linux sandbox\n" });
+    shell()?.emit("Linux container\n");
+    expect(await client.next()).toEqual({ type: "output", data: "Linux container\n" });
 
     shell()?.exit(0);
     expect(await client.next()).toEqual({ type: "exit", code: 0 });
@@ -164,40 +164,40 @@ describe("terminal WebSocket", () => {
   });
 
   it("accepts the bearer token as a query parameter when auth is enabled", async () => {
-    const { app, port, sandboxId } = await createFixture({
+    const { app, port, containerId } = await createFixture({
       authClients: JSON.stringify([{ id: "ui", token: "ui-token", permissions: ["*"] }]),
     });
     cleanups.push(() => app.close());
 
     const client = await connect(
-      `ws://127.0.0.1:${port}/api/ws/terminal/${sandboxId}?token=ui-token&cols=90&rows=20`,
+      `ws://127.0.0.1:${port}/api/ws/terminal/${containerId}?token=ui-token&cols=90&rows=20`,
     );
     cleanups.push(async () => {
       client.socket.close();
     });
 
-    expect(await client.next()).toEqual({ type: "ready", sandboxId });
+    expect(await client.next()).toEqual({ type: "ready", containerId });
   });
 
-  it("reports unknown sandboxes with a stable error", async () => {
+  it("reports unknown containers with a stable error", async () => {
     const { app, port } = await createFixture();
     cleanups.push(() => app.close());
 
-    const client = await connect(`ws://127.0.0.1:${port}/api/ws/terminal/sbx_missing`);
+    const client = await connect(`ws://127.0.0.1:${port}/api/ws/terminal/ctr_missing`);
     cleanups.push(async () => {
       client.socket.close();
     });
 
     const message = await client.next();
     expect(message.type).toBe("error");
-    expect(message.code).toBe("SANDBOX_NOT_FOUND");
+    expect(message.code).toBe("CONTAINER_NOT_FOUND");
   });
 
   it("rejects malformed client messages", async () => {
-    const { app, port, sandboxId } = await createFixture();
+    const { app, port, containerId } = await createFixture();
     cleanups.push(() => app.close());
 
-    const client = await connect(`ws://127.0.0.1:${port}/api/ws/terminal/${sandboxId}`);
+    const client = await connect(`ws://127.0.0.1:${port}/api/ws/terminal/${containerId}`);
     cleanups.push(async () => {
       client.socket.close();
     });

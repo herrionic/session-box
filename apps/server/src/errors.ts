@@ -1,9 +1,9 @@
 import type { ErrorResponse, SessionBoxErrorCode } from "@sessionbox/protocol";
 
 const HTTP_STATUS_BY_CODE: Record<SessionBoxErrorCode, number> = {
-  SANDBOX_NOT_FOUND: 404,
-  SANDBOX_NOT_RUNNING: 409,
-  SANDBOX_CREATE_FAILED: 502,
+  CONTAINER_NOT_FOUND: 404,
+  CONTAINER_NOT_RUNNING: 409,
+  CONTAINER_CREATE_FAILED: 502,
   SSH_UNAVAILABLE: 503,
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,

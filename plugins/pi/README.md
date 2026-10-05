@@ -1,7 +1,7 @@
 # SessionBox for Pi
 
 Runs Pi's native `bash`, `read`, `write`, `edit` and `ls` tools inside a
-SessionBox sandbox. The model keeps the same tool vocabulary; the adapter
+SessionBox container. The model keeps the same tool vocabulary; the adapter
 re-registers each tool with operations that execute over the SessionBox agent
 protocol (`@sessionbox/client`).
 
@@ -11,13 +11,13 @@ tool operations API: `BashOperations`, `ReadOperations`, `WriteOperations`,
 
 ## How it works
 
-- `session_start`: resolve the sandbox bound to this Pi session (stored in
+- `session_start`: resolve the container bound to this Pi session (stored in
   `~/.pi/agent/extensions/sessionbox/bindings.json`) or create one, then open
   an agent-protocol connection.
 - Tools: paths under the Pi session cwd map to `/workspace/...`; paths already
   under `/workspace` pass through. Commands and file operations go to the
-  sandbox over the agent WebSocket.
-- `session_shutdown`: closes the connection only. The sandbox keeps running,
+  container over the agent WebSocket.
+- `session_shutdown`: closes the connection only. The container keeps running,
   so a resumed session finds the same workspace (PROJECT.md §39, §43.3).
 - Failure is closed: when SessionBox is unreachable the tools report an error
   instead of silently running on the host.
@@ -38,13 +38,13 @@ Configuration (environment):
 | --- | --- | --- |
 | `SESSIONBOX_URL` | `http://127.0.0.1:8787` | SessionBox server |
 | `SESSIONBOX_TOKEN` | – | bearer token (enforced from Day 6) |
-| `SESSIONBOX_SANDBOX` | – | pin every session to one existing sandbox |
-| `SESSIONBOX_BINDINGS_FILE` | `~/.pi/agent/extensions/sessionbox/bindings.json` | session → sandbox map |
+| `SESSIONBOX_CONTAINER` | – | pin every session to one existing container |
+| `SESSIONBOX_BINDINGS_FILE` | `~/.pi/agent/extensions/sessionbox/bindings.json` | session → container map |
 | `SESSIONBOX_DISABLED` | – | `1` disables the extension |
 
 Flag: `pi --no-sessionbox` runs tools on the host again.
 
-Inside Pi, `/sessionbox` shows the bound sandbox.
+Inside Pi, `/sessionbox` shows the bound container.
 
 ## Smoke test without a model
 

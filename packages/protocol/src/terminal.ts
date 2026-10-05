@@ -20,7 +20,7 @@ export type TerminalClientMessage = z.infer<typeof TerminalClientMessageSchema>;
 export const TerminalServerMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("ready"),
-    sandboxId: z.string().min(1),
+    containerId: z.string().min(1),
   }),
   z.strictObject({
     type: z.literal("output"),

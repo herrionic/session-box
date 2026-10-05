@@ -2,7 +2,7 @@
 #
 # Builds the server bundle and the web UI, then runs the server with production
 # dependencies only. The container needs /var/run/docker.sock mounted to manage
-# sandbox containers on the host (see docs/ADR/0002-deployment-dood.md).
+# container containers on the host (see docs/ADR/0002-deployment-dood.md).
 #
 # NOTE: image building is verified on the remote Linux host, not on the
 # development machine (no Docker available locally).

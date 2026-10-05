@@ -13,7 +13,7 @@ runtimes out of the MVP, and §49 forbids speculative abstractions before a
 second real use case exists.
 
 The hard part of a runtime swap is not `create`/`delete`; it is **access**.
-The server needs SSH/SFTP/PTY into a sandbox:
+The server needs SSH/SFTP/PTY into a container:
 
 - Docker (same Linux host): dial the container IP on the shared bridge;
 - Kubernetes: `pods/exec` or `port-forward` streams;
@@ -24,7 +24,7 @@ The server needs SSH/SFTP/PTY into a sandbox:
 
 Reserve a **thin internal seam**, implement only Docker now:
 
-1. `apps/server/src/runtime/types.ts` defines `SandboxRuntime`
+1. `apps/server/src/runtime/types.ts` defines `ContainerRuntime`
    (lifecycle + `openPortStream`) with runtime-neutral types.
 2. `dockerode` is imported **only** under `apps/server/src/runtime/docker/`;
    adapter internals (labels, capabilities, network, container IPs, log

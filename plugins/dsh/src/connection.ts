@@ -1,4 +1,4 @@
-import { SessionBoxClient, type SandboxRuntime } from "@sessionbox/client";
+import { SessionBoxClient, type ContainerRuntime } from "@sessionbox/client";
 import type { SessionBoxPluginConfig } from "./config.ts";
 
 /**
@@ -6,22 +6,22 @@ import type { SessionBoxPluginConfig } from "./config.ts";
  * lets tests supply a fake without a SessionBox server.
  */
 export interface SessionBoxRuntimeProvider {
-  connect(): Promise<{ sandboxId: string; runtime: SandboxRuntime }>;
-  sandboxIdOrNull(): string | null;
+  connect(): Promise<{ containerId: string; runtime: ContainerRuntime }>;
+  containerIdOrNull(): string | null;
   close(): Promise<void>;
 }
 
 /**
- * Process-scoped SessionBox binding: resolves (or creates) the sandbox this
+ * Process-scoped SessionBox binding: resolves (or creates) the container this
  * harness process runs against and keeps one agent-protocol connection for
  * both capability providers. DSH's execution world is per harness process
  * (like its SSH helper), so the binding lives here rather than per call.
  */
 export class SessionBoxConnection implements SessionBoxRuntimeProvider {
   private readonly client: SessionBoxClient;
-  private runtime: SandboxRuntime | null = null;
-  private sandboxId: string | null = null;
-  private connecting: Promise<{ sandboxId: string; runtime: SandboxRuntime }> | null = null;
+  private runtime: ContainerRuntime | null = null;
+  private containerId: string | null = null;
+  private connecting: Promise<{ containerId: string; runtime: ContainerRuntime }> | null = null;
 
   constructor(private readonly config: SessionBoxPluginConfig) {
     this.client = new SessionBoxClient({
@@ -30,9 +30,9 @@ export class SessionBoxConnection implements SessionBoxRuntimeProvider {
     });
   }
 
-  async connect(): Promise<{ sandboxId: string; runtime: SandboxRuntime }> {
-    if (this.runtime !== null && this.sandboxId !== null) {
-      return { sandboxId: this.sandboxId, runtime: this.runtime };
+  async connect(): Promise<{ containerId: string; runtime: ContainerRuntime }> {
+    if (this.runtime !== null && this.containerId !== null) {
+      return { containerId: this.containerId, runtime: this.runtime };
     }
 
     if (this.connecting === null) {
@@ -44,14 +44,14 @@ export class SessionBoxConnection implements SessionBoxRuntimeProvider {
     return await this.connecting;
   }
 
-  sandboxIdOrNull(): string | null {
-    return this.sandboxId;
+  containerIdOrNull(): string | null {
+    return this.containerId;
   }
 
   async close(): Promise<void> {
     const runtime = this.runtime;
     this.runtime = null;
-    this.sandboxId = null;
+    this.containerId = null;
     this.connecting = null;
 
     if (runtime !== null) {
@@ -63,35 +63,35 @@ export class SessionBoxConnection implements SessionBoxRuntimeProvider {
     }
   }
 
-  private async doConnect(): Promise<{ sandboxId: string; runtime: SandboxRuntime }> {
-    const sandboxId = await this.resolveSandboxId();
-    const runtime = await this.client.connect(sandboxId);
+  private async doConnect(): Promise<{ containerId: string; runtime: ContainerRuntime }> {
+    const containerId = await this.resolveContainerId();
+    const runtime = await this.client.connect(containerId);
     this.runtime = runtime;
-    this.sandboxId = sandboxId;
-    return { sandboxId, runtime };
+    this.containerId = containerId;
+    return { containerId, runtime };
   }
 
-  private async resolveSandboxId(): Promise<string> {
+  private async resolveContainerId(): Promise<string> {
     const { config } = this;
 
-    if (config.sandboxId !== undefined) {
-      await this.client.getSandbox(config.sandboxId);
-      return config.sandboxId;
+    if (config.containerId !== undefined) {
+      await this.client.getContainer(config.containerId);
+      return config.containerId;
     }
 
-    if (config.sandboxName !== undefined) {
-      const existing = (await this.client.listSandboxes()).find(
-        (sandbox) =>
-          sandbox.name === config.sandboxName &&
-          sandbox.status !== "failed" &&
-          sandbox.status !== "deleting",
+    if (config.containerName !== undefined) {
+      const existing = (await this.client.listContainers()).find(
+        (container) =>
+          container.name === config.containerName &&
+          container.status !== "failed" &&
+          container.status !== "deleting",
       );
       if (existing !== undefined) return existing.id;
     }
 
-    const sandbox = await this.client.createSandbox({
-      name: config.sandboxName ?? `dsh-${process.pid}`,
+    const container = await this.client.createContainer({
+      name: config.containerName ?? `dsh-${process.pid}`,
     });
-    return sandbox.id;
+    return container.id;
   }
 }

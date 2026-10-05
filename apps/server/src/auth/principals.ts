@@ -8,12 +8,12 @@ export interface Principal {
 }
 
 export const PERMISSIONS = {
-  create: "sandbox:create",
-  read: "sandbox:read",
-  execute: "sandbox:execute",
-  write: "sandbox:write",
-  delete: "sandbox:delete",
-  admin: "sandbox:admin",
+  create: "container:create",
+  read: "container:read",
+  execute: "container:execute",
+  write: "container:write",
+  delete: "container:delete",
+  admin: "container:admin",
 } as const;
 
 /** Resolves a bearer token to a principal; undefined when the token is unknown. */

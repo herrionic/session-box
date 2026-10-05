@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type JSX } from "react";
 import type { FileEntry } from "@sessionbox/protocol";
 import { api } from "../api.ts";
-import { describeError } from "./SandboxList.tsx";
+import { describeError } from "./ContainerList.tsx";
 
 const WORKSPACE = "/workspace";
 
-export function FileBrowser({ sandboxId }: { sandboxId: string }): JSX.Element {
+export function FileBrowser({ containerId }: { containerId: string }): JSX.Element {
   const [path, setPath] = useState(WORKSPACE);
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +22,7 @@ export function FileBrowser({ sandboxId }: { sandboxId: string }): JSX.Element {
     async (target: string): Promise<void> => {
       setBusy(true);
       try {
-        const response = await api.listFiles(sandboxId, target);
+        const response = await api.listFiles(containerId, target);
         setEntries(sortEntries(response.entries));
         setPath(response.path);
         setError(null);
@@ -32,7 +32,7 @@ export function FileBrowser({ sandboxId }: { sandboxId: string }): JSX.Element {
         setBusy(false);
       }
     },
-    [sandboxId],
+    [containerId],
   );
 
   useEffect(() => {
@@ -49,7 +49,7 @@ export function FileBrowser({ sandboxId }: { sandboxId: string }): JSX.Element {
     if (name === null || name.trim() === "") return;
     setError(null);
     try {
-      await api.createFile(sandboxId, joinPath(path, name.trim()), type);
+      await api.createFile(containerId, joinPath(path, name.trim()), type);
       await load(path);
     } catch (caught) {
       setError(describeError(caught));
@@ -60,7 +60,7 @@ export function FileBrowser({ sandboxId }: { sandboxId: string }): JSX.Element {
     if (!window.confirm(`Delete ${entry.path}?`)) return;
     setError(null);
     try {
-      await api.removeFile(sandboxId, entry.path, entry.type === "directory");
+      await api.removeFile(containerId, entry.path, entry.type === "directory");
       if (openFile?.path === entry.path) setOpenFile(null);
       await load(path);
     } catch (caught) {
@@ -71,7 +71,7 @@ export function FileBrowser({ sandboxId }: { sandboxId: string }): JSX.Element {
   const openEditor = async (entry: FileEntry): Promise<void> => {
     setError(null);
     try {
-      const file = await api.readFile(sandboxId, entry.path);
+      const file = await api.readFile(containerId, entry.path);
       setOpenFile({ path: file.path, content: file.content, original: file.content });
     } catch (caught) {
       setError(describeError(caught));
@@ -83,7 +83,7 @@ export function FileBrowser({ sandboxId }: { sandboxId: string }): JSX.Element {
     setSaving(true);
     setError(null);
     try {
-      const file = await api.writeFile(sandboxId, openFile.path, openFile.content);
+      const file = await api.writeFile(containerId, openFile.path, openFile.content);
       setOpenFile({ path: file.path, content: file.content, original: file.content });
       await load(path);
     } catch (caught) {
@@ -99,7 +99,7 @@ export function FileBrowser({ sandboxId }: { sandboxId: string }): JSX.Element {
     if (file === undefined) return;
     setError(null);
     try {
-      await api.uploadFile(sandboxId, joinPath(path, file.name), file);
+      await api.uploadFile(containerId, joinPath(path, file.name), file);
       await load(path);
     } catch (caught) {
       setError(describeError(caught));
@@ -157,7 +157,7 @@ export function FileBrowser({ sandboxId }: { sandboxId: string }): JSX.Element {
         {entries.length === 0 ? (
           <p className="empty">This directory is empty.</p>
         ) : (
-          <table className="sandbox-table">
+          <table className="container-table">
             <thead>
               <tr>
                 <th>Name</th>
@@ -193,7 +193,7 @@ export function FileBrowser({ sandboxId }: { sandboxId: string }): JSX.Element {
                   <td>{new Date(entry.modifiedAt).toLocaleString()}</td>
                   <td className="actions">
                     {entry.type === "file" ? (
-                      <a className="button-link" href={api.downloadUrl(sandboxId, entry.path)}>
+                      <a className="button-link" href={api.downloadUrl(containerId, entry.path)}>
                         Download
                       </a>
                     ) : null}
@@ -220,7 +220,7 @@ export function FileBrowser({ sandboxId }: { sandboxId: string }): JSX.Element {
               >
                 {saving ? "Saving…" : "Save"}
               </button>
-              <a className="button-link" href={api.downloadUrl(sandboxId, openFile.path)}>
+              <a className="button-link" href={api.downloadUrl(containerId, openFile.path)}>
                 Download
               </a>
               <button type="button" className="secondary" onClick={() => setOpenFile(null)}>

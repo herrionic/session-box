@@ -8,13 +8,13 @@ import {
 } from "@sessionbox/protocol";
 import { SessionBoxError } from "../errors.ts";
 import type { Logger } from "../logging.ts";
-import { normalizeSandboxPath, resolveWithinWorkspace } from "../ssh/paths.ts";
+import { normalizeContainerPath, resolveWithinWorkspace } from "../ssh/paths.ts";
 import { toPublicSshError } from "../ssh/public-errors.ts";
 import type { SshSession } from "../ssh/session.ts";
-import type { SandboxService } from "../sandbox/service.ts";
+import type { ContainerService } from "../container/service.ts";
 
-export interface SandboxFilesServiceOptions {
-  sandboxes: SandboxService;
+export interface ContainerFilesServiceOptions {
+  containers: ContainerService;
   /** File-manager root; every path is confined to it (default `/workspace`). */
   workspace: string;
   maxTextFileBytes?: number;
@@ -27,32 +27,32 @@ export interface SandboxFilesServiceOptions {
  * workspace root before any SSH call; the client never supplies a raw remote
  * path (PROJECT.md §27, §42).
  */
-export class SandboxFilesService {
-  private readonly sandboxes: SandboxService;
+export class ContainerFilesService {
+  private readonly containers: ContainerService;
   private readonly workspaceRoot: string;
   private readonly maxTextFileBytes: number;
   private readonly maxUploadBytes: number;
   private readonly logger: Logger;
 
-  constructor(options: SandboxFilesServiceOptions) {
-    this.sandboxes = options.sandboxes;
-    this.workspaceRoot = normalizeSandboxPath(options.workspace);
+  constructor(options: ContainerFilesServiceOptions) {
+    this.containers = options.containers;
+    this.workspaceRoot = normalizeContainerPath(options.workspace);
     this.maxTextFileBytes = options.maxTextFileBytes ?? FILE_LIMITS.maxTextFileBytes;
     this.maxUploadBytes = options.maxUploadBytes ?? FILE_LIMITS.maxUploadBytes;
     this.logger = options.logger;
   }
 
-  async list(sandboxId: string, path: string): Promise<FileListResponse> {
+  async list(containerId: string, path: string): Promise<FileListResponse> {
     const target = this.resolve(path);
-    return await this.run(sandboxId, async (session) => {
+    return await this.run(containerId, async (session) => {
       const entries = await session.list(target);
       return { path: target, entries: entries.map((entry) => toFileEntry(entry)) };
     });
   }
 
-  async readText(sandboxId: string, path: string): Promise<FileContent> {
+  async readText(containerId: string, path: string): Promise<FileContent> {
     const target = this.resolve(path);
-    return await this.run(sandboxId, async (session) => {
+    return await this.run(containerId, async (session) => {
       const entry = await session.stat(target);
       if (entry.type !== "file") {
         throw new SessionBoxError("INVALID_REQUEST", "only regular files can be viewed as text");
@@ -74,7 +74,7 @@ export class SandboxFilesService {
     });
   }
 
-  async writeText(sandboxId: string, request: WriteFileRequest): Promise<FileContent> {
+  async writeText(containerId: string, request: WriteFileRequest): Promise<FileContent> {
     const target = this.resolve(request.path);
     const bytes = Buffer.byteLength(request.content, "utf8");
     if (bytes > this.maxTextFileBytes) {
@@ -84,7 +84,7 @@ export class SandboxFilesService {
       );
     }
 
-    return await this.run(sandboxId, async (session) => {
+    return await this.run(containerId, async (session) => {
       await session.writeFile(target, request.content);
       const entry = await session.stat(target);
       return {
@@ -96,9 +96,9 @@ export class SandboxFilesService {
     });
   }
 
-  async create(sandboxId: string, request: CreateFileRequest): Promise<FileEntry> {
+  async create(containerId: string, request: CreateFileRequest): Promise<FileEntry> {
     const target = this.resolve(request.path);
-    return await this.run(sandboxId, async (session) => {
+    return await this.run(containerId, async (session) => {
       if (request.type === "directory") {
         await session.mkdir(target, { recursive: true });
       } else {
@@ -108,15 +108,15 @@ export class SandboxFilesService {
     });
   }
 
-  async remove(sandboxId: string, path: string, options: { recursive?: boolean } = {}): Promise<void> {
+  async remove(containerId: string, path: string, options: { recursive?: boolean } = {}): Promise<void> {
     const target = this.resolve(path);
     if (target === this.workspaceRoot) {
       throw new SessionBoxError("INVALID_REQUEST", "the workspace root cannot be deleted");
     }
-    await this.run(sandboxId, (session) => session.remove(target, options));
+    await this.run(containerId, (session) => session.remove(target, options));
   }
 
-  async upload(sandboxId: string, path: string, content: Buffer): Promise<FileEntry> {
+  async upload(containerId: string, path: string, content: Buffer): Promise<FileEntry> {
     if (content.length > this.maxUploadBytes) {
       throw new SessionBoxError(
         "INVALID_REQUEST",
@@ -125,18 +125,18 @@ export class SandboxFilesService {
     }
 
     const target = this.resolve(path);
-    return await this.run(sandboxId, async (session) => {
+    return await this.run(containerId, async (session) => {
       await session.writeFile(target, content);
       return toFileEntry(await session.stat(target));
     });
   }
 
   async download(
-    sandboxId: string,
+    containerId: string,
     path: string,
   ): Promise<{ entry: FileEntry; content: Buffer }> {
     const target = this.resolve(path);
-    return await this.run(sandboxId, async (session) => {
+    return await this.run(containerId, async (session) => {
       const entry = await session.stat(target);
       if (entry.type !== "file") {
         throw new SessionBoxError("INVALID_REQUEST", "only regular files can be downloaded");
@@ -156,12 +156,12 @@ export class SandboxFilesService {
   }
 
   private async run<T>(
-    sandboxId: string,
+    containerId: string,
     operation: (session: SshSession) => Promise<T>,
   ): Promise<T> {
     try {
-      const result = await this.sandboxes.withSshSession(sandboxId, operation);
-      await this.sandboxes.touch(sandboxId);
+      const result = await this.containers.withSshSession(containerId, operation);
+      await this.containers.touch(containerId);
       return result;
     } catch (error) {
       throw toPublicSshError(error, this.logger, "file.operation.failed");

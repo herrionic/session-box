@@ -39,7 +39,7 @@ export interface SshShell {
 
 /**
  * SessionBox-side SSH/SFTP session. The transport is always a runtime-provided
- * duplex stream (`SandboxRuntime.openPortStream`); callers never see host or
+ * duplex stream (`ContainerRuntime.openPortStream`); callers never see host or
  * port information (PROJECT.md §18).
  */
 export interface SshSession {
@@ -55,7 +55,7 @@ export interface SshSession {
 }
 
 export interface SshSessionRequest {
-  sandboxId: string;
+  containerId: string;
   runtimeRef: string;
 }
 

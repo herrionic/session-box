@@ -1,12 +1,12 @@
 import { HealthResponseSchema } from "@sessionbox/protocol";
 import type { ServerConfig } from "../../config.ts";
-import type { SandboxRuntime } from "../../runtime/types.ts";
+import type { ContainerRuntime } from "../../runtime/types.ts";
 import { SERVER_VERSION } from "../../version.ts";
 import type { SessionBoxApp } from "../types.ts";
 
 export function registerHealthRoutes(
   app: SessionBoxApp,
-  deps: { config: ServerConfig; runtime: SandboxRuntime },
+  deps: { config: ServerConfig; runtime: ContainerRuntime },
 ): void {
   app.get("/api/health", async () =>
     HealthResponseSchema.parse({

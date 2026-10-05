@@ -5,15 +5,15 @@ import type {
   ReadOperations,
   WriteOperations,
 } from "@earendil-works/pi-coding-agent";
-import { SessionBoxClientError, type SandboxRuntime } from "@sessionbox/client";
-import { toSandboxPath } from "./paths.ts";
+import { SessionBoxClientError, type ContainerRuntime } from "@sessionbox/client";
+import { toContainerPath } from "./paths.ts";
 
 export interface OperationContext {
   /** The live agent-protocol connection; throws when SessionBox is unavailable. */
-  runtime: () => SandboxRuntime;
+  runtime: () => ContainerRuntime;
   /** The Pi session working directory on the host. */
   hostCwd: () => string;
-  sandboxRoot: string;
+  containerRoot: string;
 }
 
 const IMAGE_MIME_TYPES: Record<string, string> = {
@@ -37,7 +37,7 @@ function assertTextReadable(hostPath: string): void {
   }
 }
 
-/** Bash runs inside the sandbox; cwd and output stream through the protocol. */
+/** Bash runs inside the container; cwd and output stream through the protocol. */
 export function createBashOperations(context: OperationContext): BashOperations {
   return {
     exec: async (command, cwd, { onData, signal, timeout }) => {
@@ -46,7 +46,7 @@ export function createBashOperations(context: OperationContext): BashOperations 
       }
 
       const result = await context.runtime().exec(command, {
-        cwd: toSandboxPath(cwd, context.hostCwd(), context.sandboxRoot),
+        cwd: toContainerPath(cwd, context.hostCwd(), context.containerRoot),
         ...(timeout !== undefined ? { timeoutMs: Math.round(timeout * 1000) } : {}),
       });
 
@@ -62,11 +62,11 @@ export function createReadOperations(context: OperationContext): ReadOperations 
   return {
     readFile: async (absolutePath) => {
       assertTextReadable(absolutePath);
-      const file = await context.runtime().readFile(toSandbox(absolutePath, context));
+      const file = await context.runtime().readFile(toContainer(absolutePath, context));
       return Buffer.from(file.content, "utf8");
     },
     access: async (absolutePath) => {
-      await context.runtime().statFile(toSandbox(absolutePath, context));
+      await context.runtime().statFile(toContainer(absolutePath, context));
     },
     detectImageMimeType: async (absolutePath) => {
       const extension = absolutePath.toLowerCase().match(/\.[^./\\]+$/)?.[0] ?? "";
@@ -78,10 +78,10 @@ export function createReadOperations(context: OperationContext): ReadOperations 
 export function createWriteOperations(context: OperationContext): WriteOperations {
   return {
     writeFile: async (absolutePath, content) => {
-      await context.runtime().writeFile(toSandbox(absolutePath, context), content);
+      await context.runtime().writeFile(toContainer(absolutePath, context), content);
     },
     mkdir: async (dir) => {
-      await context.runtime().mkdir(toSandbox(dir, context), { recursive: true });
+      await context.runtime().mkdir(toContainer(dir, context), { recursive: true });
     },
   };
 }
@@ -90,14 +90,14 @@ export function createEditOperations(context: OperationContext): EditOperations 
   return {
     readFile: async (absolutePath) => {
       assertTextReadable(absolutePath);
-      const file = await context.runtime().readFile(toSandbox(absolutePath, context));
+      const file = await context.runtime().readFile(toContainer(absolutePath, context));
       return Buffer.from(file.content, "utf8");
     },
     writeFile: async (absolutePath, content) => {
-      await context.runtime().writeFile(toSandbox(absolutePath, context), content);
+      await context.runtime().writeFile(toContainer(absolutePath, context), content);
     },
     access: async (absolutePath) => {
-      await context.runtime().statFile(toSandbox(absolutePath, context));
+      await context.runtime().statFile(toContainer(absolutePath, context));
     },
   };
 }
@@ -106,7 +106,7 @@ export function createLsOperations(context: OperationContext): LsOperations {
   return {
     exists: async (absolutePath) => {
       try {
-        await context.runtime().statFile(toSandbox(absolutePath, context));
+        await context.runtime().statFile(toContainer(absolutePath, context));
         return true;
       } catch (error) {
         if (error instanceof SessionBoxClientError && error.code === "NOT_FOUND") return false;
@@ -114,16 +114,16 @@ export function createLsOperations(context: OperationContext): LsOperations {
       }
     },
     stat: async (absolutePath) => {
-      const entry = await context.runtime().statFile(toSandbox(absolutePath, context));
+      const entry = await context.runtime().statFile(toContainer(absolutePath, context));
       return { isDirectory: () => entry.type === "directory" };
     },
     readdir: async (absolutePath) => {
-      const listing = await context.runtime().listFiles(toSandbox(absolutePath, context));
+      const listing = await context.runtime().listFiles(toContainer(absolutePath, context));
       return listing.entries.map((entry) => entry.name);
     },
   };
 }
 
-function toSandbox(hostPath: string, context: OperationContext): string {
-  return toSandboxPath(hostPath, context.hostCwd(), context.sandboxRoot);
+function toContainer(hostPath: string, context: OperationContext): string {
+  return toContainerPath(hostPath, context.hostCwd(), context.containerRoot);
 }

@@ -1,21 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   isWithinWorkspace,
-  normalizeSandboxPath,
+  normalizeContainerPath,
   resolveWithinWorkspace,
 } from "../src/ssh/paths.ts";
 
-describe("normalizeSandboxPath", () => {
+describe("normalizeContainerPath", () => {
   it("normalizes redundant separators and dot segments", () => {
-    expect(normalizeSandboxPath("/workspace/./a/../b")).toBe("/workspace/b");
-    expect(normalizeSandboxPath("//workspace//a")).toBe("/workspace/a");
-    expect(normalizeSandboxPath("/")).toBe("/");
+    expect(normalizeContainerPath("/workspace/./a/../b")).toBe("/workspace/b");
+    expect(normalizeContainerPath("//workspace//a")).toBe("/workspace/a");
+    expect(normalizeContainerPath("/")).toBe("/");
   });
 
   it("rejects relative, empty and NUL paths", () => {
-    expect(() => normalizeSandboxPath("workspace/a")).toThrow(/absolute/);
-    expect(() => normalizeSandboxPath("  ")).toThrow(/empty/);
-    expect(() => normalizeSandboxPath("/a\0b")).toThrow(/NUL/);
+    expect(() => normalizeContainerPath("workspace/a")).toThrow(/absolute/);
+    expect(() => normalizeContainerPath("  ")).toThrow(/empty/);
+    expect(() => normalizeContainerPath("/a\0b")).toThrow(/NUL/);
   });
 });
 

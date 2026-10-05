@@ -10,7 +10,7 @@ export function toPublicSshError(error: unknown, logger: Logger, event: string):
   if (error instanceof SessionBoxError) return error;
 
   if (error instanceof SshNotFoundError) {
-    return new SessionBoxError("NOT_FOUND", "the path was not found in the sandbox", {
+    return new SessionBoxError("NOT_FOUND", "the path was not found in the container", {
       cause: error,
     });
   }
@@ -20,7 +20,7 @@ export function toPublicSshError(error: unknown, logger: Logger, event: string):
   if (error instanceof SshUnavailableError) {
     return new SessionBoxError(
       "SSH_UNAVAILABLE",
-      "the sandbox SSH connection is unavailable",
+      "the container SSH connection is unavailable",
       { cause: error },
     );
   }

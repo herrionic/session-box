@@ -1,8 +1,8 @@
 import { useEffect, useState, type JSX } from "react";
-import { SandboxList } from "./components/SandboxList.tsx";
-import { SandboxDetail } from "./components/SandboxDetail.tsx";
+import { ContainerList } from "./components/ContainerList.tsx";
+import { ContainerDetail } from "./components/ContainerDetail.tsx";
 
-const DETAIL_ROUTE = /^#\/sandboxes\/(.+)$/;
+const DETAIL_ROUTE = /^#\/containers\/(.+)$/;
 
 export function App(): JSX.Element {
   const [hash, setHash] = useState(() => window.location.hash);
@@ -16,8 +16,8 @@ export function App(): JSX.Element {
   const match = DETAIL_ROUTE.exec(hash);
   if (match !== null && match[1] !== undefined) {
     return (
-      <SandboxDetail
-        sandboxId={match[1]}
+      <ContainerDetail
+        containerId={match[1]}
         onBack={() => {
           window.location.hash = "";
         }}
@@ -25,5 +25,5 @@ export function App(): JSX.Element {
     );
   }
 
-  return <SandboxList />;
+  return <ContainerList />;
 }

@@ -25,7 +25,7 @@ describe("Ssh2SessionFactory", () => {
     const { factory, openPortStream } = createFactory(new InMemoryCredentialStore(TEST_MASTER_KEY));
 
     await expect(
-      factory.create({ sandboxId: "sbx_1", runtimeRef: "fake_sbx_1" }),
+      factory.create({ containerId: "ctr_1", runtimeRef: "fake_ctr_1" }),
     ).rejects.toBeInstanceOf(SshError);
 
     expect(openPortStream).not.toHaveBeenCalled();
@@ -33,16 +33,16 @@ describe("Ssh2SessionFactory", () => {
 
   it("opens the runtime transport when a credential is stored", async () => {
     const credentials = new InMemoryCredentialStore(TEST_MASTER_KEY);
-    await credentials.save("sbx_1", SSH_PRIVATE_KEY_CREDENTIAL, generateSshKeyPair().privateKey);
+    await credentials.save("ctr_1", SSH_PRIVATE_KEY_CREDENTIAL, generateSshKeyPair().privateKey);
 
     const { factory, openPortStream } = createFactory(credentials);
 
     // The fake transport is not an SSH server, so the handshake fails; what
     // matters here is that the factory asked the runtime for the stream.
     await expect(
-      factory.create({ sandboxId: "sbx_1", runtimeRef: "fake_sbx_1" }),
+      factory.create({ containerId: "ctr_1", runtimeRef: "fake_ctr_1" }),
     ).rejects.toBeInstanceOf(SshError);
 
-    expect(openPortStream).toHaveBeenCalledWith("fake_sbx_1", 22);
+    expect(openPortStream).toHaveBeenCalledWith("fake_ctr_1", 22);
   });
 });

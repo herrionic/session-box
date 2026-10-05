@@ -14,8 +14,8 @@ import type {
   FsWriteOutcome,
 } from "@deepseek-ai/dsh-fs";
 import type { SandboxExecutionPolicy } from "@deepseek-ai/dsh-sandbox";
-import { SessionBoxClientError, type SandboxRuntime } from "@sessionbox/client";
-import { fromSandboxPath, toSandboxPath } from "@sessionbox/shared";
+import { SessionBoxClientError, type ContainerRuntime } from "@sessionbox/client";
+import { fromContainerPath, toContainerPath } from "@sessionbox/shared";
 import type { SessionBoxRuntimeProvider } from "./connection.ts";
 
 export interface FileSystemServiceConfig {
@@ -23,7 +23,7 @@ export interface FileSystemServiceConfig {
 }
 
 /**
- * `ctx.fs` over the SessionBox agent protocol. Targets are sandbox paths; the
+ * `ctx.fs` over the SessionBox agent protocol. Targets are container paths; the
  * display path stays the host path the model used so tool output matches the
  * session cwd. Text operations are supported; binary reads are not (the agent
  * protocol moves text), and watching is inherited from the base class.
@@ -47,8 +47,8 @@ export class SessionBoxFileSystem extends FileSystem {
     opts?.signal?.throwIfAborted();
     const hostCwd = opts?.cwd ?? this.hostCwd;
     const hostPath = path.isAbsolute(filePath) ? filePath : path.resolve(hostCwd, filePath);
-    const sandboxPath = toSandboxPath(hostPath, hostCwd, this.workspaceRoot);
-    return { targetKey: FsTargetKey(sandboxPath), displayPath: hostPath };
+    const containerPath = toContainerPath(hostPath, hostCwd, this.workspaceRoot);
+    return { targetKey: FsTargetKey(containerPath), displayPath: hostPath };
   }
 
   override processPath(target: FsTarget): string {
@@ -56,7 +56,7 @@ export class SessionBoxFileSystem extends FileSystem {
   }
 
   override fileUrl(target: FsTarget): string {
-    // Sandbox paths are POSIX; pathToFileURL would read "/workspace/x" as a
+    // Container paths are POSIX; pathToFileURL would read "/workspace/x" as a
     // drive-relative path on Windows hosts.
     return new URL(`file://${this.processPath(target)}`).href;
   }
@@ -86,11 +86,11 @@ export class SessionBoxFileSystem extends FileSystem {
     signal?.throwIfAborted();
     const hostCwd = opts?.cwd ?? this.hostCwd;
     const hostPath = path.isAbsolute(filePath) ? filePath : path.resolve(hostCwd, filePath);
-    const sandboxPath = toSandboxPath(hostPath, hostCwd, this.workspaceRoot);
+    const containerPath = toContainerPath(hostPath, hostCwd, this.workspaceRoot);
     const runtime = await this.runtime();
 
     try {
-      const entry = await runtime.statFile(sandboxPath);
+      const entry = await runtime.statFile(containerPath);
       return { version: versionOf(entry), type: entry.type, size: entry.size };
     } catch (error) {
       if (isNotFound(error)) return undefined;
@@ -150,7 +150,7 @@ export class SessionBoxFileSystem extends FileSystem {
         type: mapType(entry.type),
         target: {
           targetKey: FsTargetKey(entry.path),
-          displayPath: fromSandboxPath(entry.path, this.hostCwd, this.workspaceRoot) ?? entry.path,
+          displayPath: fromContainerPath(entry.path, this.hostCwd, this.workspaceRoot) ?? entry.path,
         },
         version: versionOf(entry),
         size: entry.size,
@@ -169,9 +169,9 @@ export class SessionBoxFileSystem extends FileSystem {
   ): Promise<FsWriteOutcome> {
     signal?.throwIfAborted();
     const runtime = await this.runtime();
-    const sandboxPath = this.processPath(target);
+    const containerPath = this.processPath(target);
 
-    const before = await readOptional(runtime, sandboxPath);
+    const before = await readOptional(runtime, containerPath);
     const exists = before !== null;
 
     if (expected?.kind === "createIfAbsent" && exists) {
@@ -181,19 +181,19 @@ export class SessionBoxFileSystem extends FileSystem {
       if (!exists) {
         throw new FsError("file does not exist and the write required a version", "FS_STALE_VERSION");
       }
-      const current = await runtime.statFile(sandboxPath);
+      const current = await runtime.statFile(containerPath);
       if (versionOf(current) !== expected.version) {
         throw new FsError("file changed since the version was observed", "FS_STALE_VERSION");
       }
     }
 
     try {
-      await runtime.writeFile(sandboxPath, content);
+      await runtime.writeFile(containerPath, content);
     } catch (error) {
       throw toFsError(error);
     }
 
-    const info = await runtime.statFile(sandboxPath);
+    const info = await runtime.statFile(containerPath);
     return {
       operation: exists ? "update" : "create",
       version: versionOf(info),
@@ -211,19 +211,19 @@ export class SessionBoxFileSystem extends FileSystem {
   ): Promise<FsEditOutcome> {
     signal?.throwIfAborted();
     const runtime = await this.runtime();
-    const sandboxPath = this.processPath(target);
+    const containerPath = this.processPath(target);
 
     if (edit.oldString === "") {
       throw new FsError("oldString must not be empty", "FS_IO_ERROR");
     }
 
-    const before = await readOptional(runtime, sandboxPath);
+    const before = await readOptional(runtime, containerPath);
     if (before === null) {
       throw new FsError("file does not exist", "FS_NOT_FOUND");
     }
 
     if (expected !== undefined) {
-      const current = await runtime.statFile(sandboxPath);
+      const current = await runtime.statFile(containerPath);
       if (versionOf(current) !== expected.version) {
         throw new FsError("file changed since the version was observed", "FS_STALE_VERSION");
       }
@@ -242,16 +242,16 @@ export class SessionBoxFileSystem extends FileSystem {
       : before.replace(edit.oldString, edit.newString);
 
     try {
-      await runtime.writeFile(sandboxPath, after);
+      await runtime.writeFile(containerPath, after);
     } catch (error) {
       throw toFsError(error);
     }
 
-    const info = await runtime.statFile(sandboxPath);
+    const info = await runtime.statFile(containerPath);
     return { version: versionOf(info), before, after };
   }
 
-  private async runtime(): Promise<SandboxRuntime> {
+  private async runtime(): Promise<ContainerRuntime> {
     return (await this.connection().connect()).runtime;
   }
 }
@@ -266,9 +266,9 @@ function versionOf(entry: { modifiedAt: number; size: number }): FsVersion {
   return FsVersion(`${entry.modifiedAt}:${entry.size}`);
 }
 
-async function readOptional(runtime: SandboxRuntime, sandboxPath: string): Promise<string | null> {
+async function readOptional(runtime: ContainerRuntime, containerPath: string): Promise<string | null> {
   try {
-    return (await runtime.readFile(sandboxPath)).content;
+    return (await runtime.readFile(containerPath)).content;
   } catch (error) {
     if (isNotFound(error)) return null;
     throw toFsError(error);

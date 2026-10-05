@@ -6,7 +6,7 @@ import {
 } from "@sessionbox/protocol";
 import { PERMISSIONS, requirePermission } from "../../auth/principals.ts";
 import { SessionBoxError } from "../../errors.ts";
-import type { SandboxFilesService } from "../../files/service.ts";
+import type { ContainerFilesService } from "../../files/service.ts";
 import type { SessionBoxApp } from "../types.ts";
 
 const IdParamsSchema = z.strictObject({ id: z.string().min(1) });
@@ -21,32 +21,32 @@ const RemoveQuerySchema = z.strictObject({
 
 export function registerFileRoutes(
   app: SessionBoxApp,
-  deps: { files: SandboxFilesService },
+  deps: { files: ContainerFilesService },
 ): void {
   const { files } = deps;
 
-  app.get("/api/sandboxes/:id/files", async (request) => {
+  app.get("/api/containers/:id/files", async (request) => {
     requirePermission(request.principal, PERMISSIONS.read);
     const { id } = IdParamsSchema.parse(request.params);
     const { path } = PathQuerySchema.parse(request.query);
     return await files.list(id, path);
   });
 
-  app.get("/api/sandboxes/:id/files/content", async (request) => {
+  app.get("/api/containers/:id/files/content", async (request) => {
     requirePermission(request.principal, PERMISSIONS.read);
     const { id } = IdParamsSchema.parse(request.params);
     const { path } = PathQuerySchema.parse(request.query);
     return await files.readText(id, path);
   });
 
-  app.put("/api/sandboxes/:id/files/content", async (request) => {
+  app.put("/api/containers/:id/files/content", async (request) => {
     requirePermission(request.principal, PERMISSIONS.write);
     const { id } = IdParamsSchema.parse(request.params);
     const body = WriteFileRequestSchema.parse(request.body ?? {});
     return await files.writeText(id, body);
   });
 
-  app.post("/api/sandboxes/:id/files", async (request, reply) => {
+  app.post("/api/containers/:id/files", async (request, reply) => {
     requirePermission(request.principal, PERMISSIONS.write);
     const { id } = IdParamsSchema.parse(request.params);
     const body = CreateFileRequestSchema.parse(request.body ?? {});
@@ -54,7 +54,7 @@ export function registerFileRoutes(
     return await files.create(id, body);
   });
 
-  app.delete("/api/sandboxes/:id/files", async (request, reply) => {
+  app.delete("/api/containers/:id/files", async (request, reply) => {
     requirePermission(request.principal, PERMISSIONS.write);
     const { id } = IdParamsSchema.parse(request.params);
     const query = RemoveQuerySchema.parse(request.query);
@@ -62,7 +62,7 @@ export function registerFileRoutes(
     reply.code(204).send();
   });
 
-  app.get("/api/sandboxes/:id/files/download", async (request, reply) => {
+  app.get("/api/containers/:id/files/download", async (request, reply) => {
     requirePermission(request.principal, PERMISSIONS.read);
     const { id } = IdParamsSchema.parse(request.params);
     const { path } = PathQuerySchema.parse(request.query);
@@ -79,7 +79,7 @@ export function registerFileRoutes(
   });
 
   app.post(
-    "/api/sandboxes/:id/files/upload",
+    "/api/containers/:id/files/upload",
     { bodyLimit: FILE_LIMITS.maxUploadBytes },
     async (request, reply) => {
       requirePermission(request.principal, PERMISSIONS.write);

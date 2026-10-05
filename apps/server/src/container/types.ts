@@ -1,22 +1,22 @@
 import type {
   LifecyclePolicy,
-  Sandbox,
-  SandboxResources,
-  SandboxStatus,
+  Container,
+  ContainerResources,
+  ContainerStatus,
 } from "@sessionbox/protocol";
 
 /**
- * Internal sandbox record: the public model plus runtime-internal fields that
+ * Internal container record: the public model plus runtime-internal fields that
  * must never leave the server.
  */
-export interface SandboxRecord {
+export interface ContainerRecord {
   id: string;
   name: string;
   image: string;
   runtime: string;
-  status: SandboxStatus;
+  status: ContainerStatus;
   workspace: string;
-  resources: SandboxResources;
+  resources: ContainerResources;
   lifecycle: LifecyclePolicy;
   createdAt: string;
   startedAt?: string;
@@ -31,7 +31,7 @@ export interface SandboxRecord {
  * Explicit mapping (not a spread) so new internal fields can never leak into
  * the public API by accident.
  */
-export function toPublicSandbox(record: SandboxRecord): Sandbox {
+export function toPublicContainer(record: ContainerRecord): Container {
   return {
     id: record.id,
     name: record.name,

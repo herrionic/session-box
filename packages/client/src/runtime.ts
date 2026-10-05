@@ -19,10 +19,10 @@ import {
 } from "./websocket.ts";
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
-type RequestPayload = DistributiveOmit<AgentRequest, "requestId" | "sandboxId">;
+type RequestPayload = DistributiveOmit<AgentRequest, "requestId" | "containerId">;
 
-export interface SandboxRuntimeOptions {
-  sandboxId: string;
+export interface ContainerRuntimeOptions {
+  containerId: string;
   url: string;
   webSocketFactory: WebSocketFactory;
   connectTimeoutMs?: number;
@@ -39,11 +39,11 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 /**
- * A live connection to one sandbox through the SessionBox agent protocol.
+ * A live connection to one container through the SessionBox agent protocol.
  * The harness adapter uses this instead of touching SSH, files or Docker.
  */
-export class SandboxRuntime {
-  private readonly sandboxId: string;
+export class ContainerRuntime {
+  private readonly containerId: string;
   private readonly url: string;
   private readonly webSocketFactory: WebSocketFactory;
   private readonly connectTimeoutMs: number;
@@ -54,8 +54,8 @@ export class SandboxRuntime {
   private handshake: { resolve: () => void; reject: (error: SessionBoxClientError) => void } | null =
     null;
 
-  constructor(options: SandboxRuntimeOptions) {
-    this.sandboxId = options.sandboxId;
+  constructor(options: ContainerRuntimeOptions) {
+    this.containerId = options.containerId;
     this.url = options.url;
     this.webSocketFactory = options.webSocketFactory;
     this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
@@ -199,7 +199,7 @@ export class SandboxRuntime {
       this.pending.set(requestId, { resolve, reject, timer });
 
       try {
-        socket.send(JSON.stringify({ ...payload, requestId, sandboxId: this.sandboxId }));
+        socket.send(JSON.stringify({ ...payload, requestId, containerId: this.containerId }));
       } catch (error) {
         clearTimeout(timer);
         this.pending.delete(requestId);

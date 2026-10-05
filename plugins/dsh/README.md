@@ -1,6 +1,6 @@
 # SessionBox for DeepSeek Harness (DSH)
 
-Runs DSH's filesystem and shell capabilities inside a SessionBox sandbox. The
+Runs DSH's filesystem and shell capabilities inside a SessionBox container. The
 harness keeps its native `fs`/`bash` tools and the model sees no new tools; the
 `ctx.fs` and `ctx.shell` capability seams are provided by SessionBox.
 
@@ -10,27 +10,27 @@ the published `@deepseek-ai/dsh-fs`, `@deepseek-ai/dsh-shell` and
 
 ## Where it plugs in
 
-DSH's `sandbox` seam is *same-host process confinement* (bubblewrap, Landlock,
+DSH's `container` seam is *same-host process confinement* (bubblewrap, Landlock,
 Seatbelt, Windows ACL); its own docs say remote execution replaces the
 **surrounding capability seams** instead. This plugin therefore provides:
 
 | Seam | Provided by | Notes |
 | --- | --- | --- |
 | `ctx.fs` | `SessionBoxFileSystem` | text operations over the agent protocol (stat/lstat/read/stream/list/write/edit); binary reads are rejected with a typed `FS_IO_ERROR` |
-| `ctx.shell` | `SessionBoxShell` | bash in the sandbox with collected output, truncation and timeout classification; `kill()` is a no-op because the protocol is request/response |
+| `ctx.shell` | `SessionBoxShell` | bash in the container with collected output, truncation and timeout classification; `kill()` is a no-op because the protocol is request/response |
 
 ## Binding model
 
 DSH's execution world is per harness process (the same model as its SSH
-helper), so one DSH process binds one sandbox:
+helper), so one DSH process binds one container:
 
-- `sandboxId` pins an existing sandbox;
-- `sandboxName` reuses a sandbox with that name (or creates it);
-- otherwise a fresh sandbox named `dsh-<pid>` is created on first use.
+- `containerId` pins an existing container;
+- `containerName` reuses a container with that name (or creates it);
+- otherwise a fresh container named `dsh-<pid>` is created on first use.
 
 For per-session isolation run one DSH process per session, which is how the
 CLI/headless profiles work. A multi-session host (web/desktop) sharing one
-process would share one sandbox — a known limitation.
+process would share one container — a known limitation.
 
 ## Configuration
 
@@ -40,9 +40,9 @@ process would share one sandbox — a known limitation.
 | --- | --- | --- |
 | `baseUrl` / `SESSIONBOX_URL` | `http://127.0.0.1:8787` | SessionBox server |
 | `token` / `SESSIONBOX_TOKEN` | – | bearer token (enforced from Day 6) |
-| `sandboxId` / `SESSIONBOX_SANDBOX` | – | pin an existing sandbox |
-| `sandboxName` / `SESSIONBOX_SANDBOX_NAME` | – | reuse/create by name |
-| `workspaceRoot` / `SESSIONBOX_WORKSPACE_ROOT` | `/workspace` | sandbox-side root |
+| `containerId` / `SESSIONBOX_CONTAINER` | – | pin an existing container |
+| `containerName` / `SESSIONBOX_CONTAINER_NAME` | – | reuse/create by name |
+| `workspaceRoot` / `SESSIONBOX_WORKSPACE_ROOT` | `/workspace` | container-side root |
 | `hostCwd` / `SESSIONBOX_HOST_CWD` | `process.cwd()` | host directory that maps to the workspace |
 
 Example `cordis.yml` entry:
@@ -51,14 +51,14 @@ Example `cordis.yml` entry:
 plugins:
   '@sessionbox/dsh-plugin':
     baseUrl: http://localhost:8787
-    sandboxName: dsh-dev
+    containerName: dsh-dev
 ```
 
 ## Smoke test without the harness
 
 `pnpm --filter @sessionbox/dsh-plugin smoke --url http://host:8787` drives the
 providers directly against a real server (no model needed) and cleans up the
-sandbox it created.
+container it created.
 
 ## Known limitations
 

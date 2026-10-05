@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  CreateSandboxRequestSchema,
+  CreateContainerRequestSchema,
   ErrorResponseSchema,
   LifecyclePolicyPatchSchema,
-  SandboxSchema,
+  ContainerSchema,
   resolveLifecyclePolicy,
 } from "../src/index.ts";
 
@@ -26,26 +26,26 @@ describe("lifecycle policy", () => {
   });
 });
 
-describe("sandbox requests", () => {
+describe("container requests", () => {
   it("accepts an empty create request", () => {
-    expect(CreateSandboxRequestSchema.parse({})).toEqual({});
+    expect(CreateContainerRequestSchema.parse({})).toEqual({});
   });
 
   it("rejects unknown fields", () => {
-    expect(CreateSandboxRequestSchema.safeParse({ image: "x", bogus: 1 }).success).toBe(false);
+    expect(CreateContainerRequestSchema.safeParse({ image: "x", bogus: 1 }).success).toBe(false);
   });
 
   it("rejects invalid resource limits", () => {
-    const result = CreateSandboxRequestSchema.safeParse({
+    const result = CreateContainerRequestSchema.safeParse({
       resources: { memoryLimitMb: -5 },
     });
     expect(result.success).toBe(false);
   });
 });
 
-describe("public sandbox model", () => {
+describe("public container model", () => {
   const valid = {
-    id: "sbx_01ABC",
+    id: "ctr_01ABC",
     name: "agent-workspace",
     image: "sessionbox/base:latest",
     runtime: "docker",
@@ -57,24 +57,24 @@ describe("public sandbox model", () => {
     activeConnections: 0,
   };
 
-  it("parses a valid sandbox", () => {
-    expect(SandboxSchema.parse(valid).id).toBe("sbx_01ABC");
+  it("parses a valid container", () => {
+    expect(ContainerSchema.parse(valid).id).toBe("ctr_01ABC");
   });
 
   it("rejects unknown runtime internals such as containerId", () => {
-    expect(SandboxSchema.safeParse({ ...valid, containerId: "abc" }).success).toBe(false);
+    expect(ContainerSchema.safeParse({ ...valid, containerId: "abc" }).success).toBe(false);
   });
 
   it("rejects unknown statuses", () => {
-    expect(SandboxSchema.safeParse({ ...valid, status: "zombie" }).success).toBe(false);
+    expect(ContainerSchema.safeParse({ ...valid, status: "zombie" }).success).toBe(false);
   });
 });
 
 describe("error response", () => {
   it("parses a stable error payload", () => {
     const parsed = ErrorResponseSchema.parse({
-      error: { code: "SANDBOX_NOT_FOUND", message: "sandbox was not found" },
+      error: { code: "CONTAINER_NOT_FOUND", message: "container was not found" },
     });
-    expect(parsed.error.code).toBe("SANDBOX_NOT_FOUND");
+    expect(parsed.error.code).toBe("CONTAINER_NOT_FOUND");
   });
 });

@@ -1,4 +1,4 @@
-import type { SandboxResources } from "@sessionbox/protocol";
+import type { ContainerResources } from "@sessionbox/protocol";
 
 import { join } from "node:path";
 import type { AuthConfig } from "./auth/config.ts";
@@ -31,7 +31,7 @@ export interface ServerConfig {
 
 /**
  * Reads configuration from the environment. Defaults target the published
- * container deployment (Docker socket mounted, sandbox network attached).
+ * container deployment (Docker socket mounted, container network attached).
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const runtime = (env.SESSIONBOX_RUNTIME ?? "docker").trim();

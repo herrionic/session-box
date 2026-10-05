@@ -1,9 +1,9 @@
 import type { Logger } from "../logging.ts";
-import type { SandboxService } from "../sandbox/service.ts";
-import type { SandboxRecord } from "../sandbox/types.ts";
+import type { ContainerService } from "../container/service.ts";
+import type { ContainerRecord } from "../container/types.ts";
 
 export interface LifecycleServiceOptions {
-  sandboxes: SandboxService;
+  containers: ContainerService;
   logger: Logger;
   intervalMs?: number;
   /** Injectable clock for tests. */
@@ -15,7 +15,7 @@ const DEFAULT_INTERVAL_MS = 15_000;
 /**
  * Enforces the lifecycle policy owned by SessionBox (PROJECT.md §11):
  * `autoStop` plus the optional idle timeout and maximum lifetime. Active
- * connections always win — a sandbox with an open agent or terminal
+ * connections always win — a container with an open agent or terminal
  * connection is never auto-stopped.
  */
 export class LifecycleService {
@@ -48,50 +48,50 @@ export class LifecycleService {
     }
   }
 
-  /** One evaluation pass over every running sandbox; also used by tests. */
+  /** One evaluation pass over every running container; also used by tests. */
   async runOnce(): Promise<void> {
     const now = (this.options.now ?? Date.now)();
 
-    for (const record of await this.options.sandboxes.list()) {
+    for (const record of await this.options.containers.list()) {
       if (record.status !== "running") continue;
 
       const reason = expiryReason(record, now);
       if (reason === null) continue;
 
       this.options.logger.info(
-        { event: "lifecycle.auto_stop", sandboxId: record.id, reason },
-        "auto-stopping sandbox",
+        { event: "lifecycle.auto_stop", containerId: record.id, reason },
+        "auto-stopping container",
       );
 
       try {
-        await this.options.sandboxes.stop(record.id);
+        await this.options.containers.stop(record.id);
 
         if (record.lifecycle.deleteAfterStop) {
-          await this.options.sandboxes.remove(record.id);
+          await this.options.containers.remove(record.id);
           this.options.logger.info(
-            { event: "lifecycle.auto_delete", sandboxId: record.id },
-            "deleted sandbox after auto-stop",
+            { event: "lifecycle.auto_delete", containerId: record.id },
+            "deleted container after auto-stop",
           );
         }
       } catch (error) {
         this.options.logger.warn(
           {
             event: "lifecycle.auto_stop_failed",
-            sandboxId: record.id,
+            containerId: record.id,
             err: error instanceof Error ? error.message : String(error),
           },
-          "auto-stop failed; the sandbox keeps running",
+          "auto-stop failed; the container keeps running",
         );
       }
     }
   }
 }
 
-function expiryReason(record: SandboxRecord, now: number): string | null {
+function expiryReason(record: ContainerRecord, now: number): string | null {
   const { lifecycle } = record;
   if (!lifecycle.autoStop) return null;
 
-  // Live connections keep the sandbox alive regardless of the timers.
+  // Live connections keep the container alive regardless of the timers.
   if (record.activeConnections > 0) return null;
 
   if (lifecycle.idleTimeoutSeconds !== undefined) {

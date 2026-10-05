@@ -1,12 +1,12 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 
-/** Credential-store entry name for the per-sandbox SSH private key. */
+/** Credential-store entry name for the per-container SSH private key. */
 export const SSH_PRIVATE_KEY_CREDENTIAL = "ssh-private-key";
 
 export interface SshKeyPair {
   /** OpenSSH-format private key, stored encrypted and never exposed. */
   privateKey: string;
-  /** OpenSSH public key line, injected into the sandbox authorized_keys. */
+  /** OpenSSH public key line, injected into the container authorized_keys. */
   publicKey: string;
 }
 
@@ -16,7 +16,7 @@ const PRIVATE_KEY_LABEL = "OPENSSH PRIVATE KEY";
 const BLOCK_SIZE = 8;
 
 /**
- * One ephemeral ed25519 keypair per sandbox (PROJECT.md §14).
+ * One ephemeral ed25519 keypair per container (PROJECT.md §14).
  *
  * Node generates the key material (standard, testable), then the private key
  * is encoded into the OpenSSH private key format because ssh2 only accepts

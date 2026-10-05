@@ -1,8 +1,8 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { SandboxRecord } from "../sandbox/types.ts";
-import type { SandboxRepository } from "../sandbox/repository.ts";
+import type { ContainerRecord } from "../container/types.ts";
+import type { ContainerRepository } from "../container/repository.ts";
 
-interface SandboxRow {
+interface ContainerRow {
   id: string;
   name: string;
   image: string;
@@ -19,14 +19,14 @@ interface SandboxRow {
   runtime_ref: string | null;
 }
 
-/** SQLite-backed sandbox records (PROJECT.md §33). */
-export class SqliteSandboxRepository implements SandboxRepository {
+/** SQLite-backed container records (PROJECT.md §33). */
+export class SqliteContainerRepository implements ContainerRepository {
   constructor(private readonly database: DatabaseSync) {}
 
-  async save(record: SandboxRecord): Promise<void> {
+  async save(record: ContainerRecord): Promise<void> {
     this.database
       .prepare(
-        `INSERT INTO sandboxes (
+        `INSERT INTO containers (
            id, name, image, runtime, status, workspace, resources, lifecycle,
            created_at, started_at, stopped_at, last_activity_at, active_connections, runtime_ref
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -63,35 +63,35 @@ export class SqliteSandboxRepository implements SandboxRepository {
       );
   }
 
-  async get(id: string): Promise<SandboxRecord | undefined> {
-    const row = this.database.prepare("SELECT * FROM sandboxes WHERE id = ?").get(id) as
-      | SandboxRow
+  async get(id: string): Promise<ContainerRecord | undefined> {
+    const row = this.database.prepare("SELECT * FROM containers WHERE id = ?").get(id) as
+      | ContainerRow
       | undefined;
     return row === undefined ? undefined : toRecord(row);
   }
 
-  async list(): Promise<SandboxRecord[]> {
+  async list(): Promise<ContainerRecord[]> {
     const rows = this.database
-      .prepare("SELECT * FROM sandboxes ORDER BY created_at ASC")
-      .all() as unknown as SandboxRow[];
+      .prepare("SELECT * FROM containers ORDER BY created_at ASC")
+      .all() as unknown as ContainerRow[];
     return rows.map(toRecord);
   }
 
   async delete(id: string): Promise<void> {
-    this.database.prepare("DELETE FROM sandboxes WHERE id = ?").run(id);
+    this.database.prepare("DELETE FROM containers WHERE id = ?").run(id);
   }
 }
 
-function toRecord(row: SandboxRow): SandboxRecord {
+function toRecord(row: ContainerRow): ContainerRecord {
   return {
     id: row.id,
     name: row.name,
     image: row.image,
     runtime: row.runtime,
-    status: row.status as SandboxRecord["status"],
+    status: row.status as ContainerRecord["status"],
     workspace: row.workspace,
-    resources: JSON.parse(row.resources) as SandboxRecord["resources"],
-    lifecycle: JSON.parse(row.lifecycle) as SandboxRecord["lifecycle"],
+    resources: JSON.parse(row.resources) as ContainerRecord["resources"],
+    lifecycle: JSON.parse(row.lifecycle) as ContainerRecord["lifecycle"],
     createdAt: row.created_at,
     ...(row.started_at !== null ? { startedAt: row.started_at } : {}),
     ...(row.stopped_at !== null ? { stoppedAt: row.stopped_at } : {}),

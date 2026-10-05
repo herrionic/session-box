@@ -2,16 +2,16 @@ import { AgentGateway } from "./agent/gateway.ts";
 import { loadConfig } from "./config.ts";
 import { parseMasterKey } from "./credentials/master-key.ts";
 import { EncryptedCredentialStore } from "./credentials/store.ts";
-import { SandboxFilesService } from "./files/service.ts";
+import { ContainerFilesService } from "./files/service.ts";
 import { buildApp } from "./http/app.ts";
 import { LifecycleService } from "./lifecycle/service.ts";
 import { createLogger } from "./logging.ts";
 import { createRuntime } from "./runtime/index.ts";
-import { SandboxService } from "./sandbox/service.ts";
+import { ContainerService } from "./container/service.ts";
 import { SshSessionManager } from "./ssh/manager.ts";
 import { Ssh2SessionFactory } from "./ssh/ssh2-session.ts";
 import { openDatabase } from "./storage/database.ts";
-import { SqliteSandboxRepository } from "./storage/sandbox-repository.ts";
+import { SqliteContainerRepository } from "./storage/container-repository.ts";
 import { SqliteSecretRepository } from "./storage/secret-repository.ts";
 
 async function main(): Promise<void> {
@@ -29,19 +29,19 @@ async function main(): Promise<void> {
   if (masterKey === undefined) {
     logger.warn(
       { event: "server.master_key.missing" },
-      "SESSIONBOX_MASTER_KEY is not configured; sandbox creation will fail until it is set",
+      "SESSIONBOX_MASTER_KEY is not configured; container creation will fail until it is set",
     );
   }
 
   const database = openDatabase(config.databaseFile);
-  const repository = new SqliteSandboxRepository(database);
+  const repository = new SqliteContainerRepository(database);
   const secrets = new SqliteSecretRepository(database);
   const credentials = new EncryptedCredentialStore(masterKey, secrets);
 
   const runtime = createRuntime(config, logger);
   const ssh = new Ssh2SessionFactory({ runtime, credentials, logger });
   const sessions = new SshSessionManager(ssh, logger);
-  const service = new SandboxService({
+  const service = new ContainerService({
     runtime,
     repository,
     credentials,
@@ -51,8 +51,8 @@ async function main(): Promise<void> {
     baseImage: config.docker.baseImage,
     workspace: config.docker.workspace,
   });
-  const files = new SandboxFilesService({
-    sandboxes: service,
+  const files = new ContainerFilesService({
+    containers: service,
     workspace: config.docker.workspace,
     logger,
   });
@@ -65,7 +65,7 @@ async function main(): Promise<void> {
   } catch (error) {
     logger.warn(
       {
-        event: "sandbox.reconcile.skipped",
+        event: "container.reconcile.skipped",
         err: error instanceof Error ? error.message : String(error),
       },
       "container runtime not reachable at startup; continuing without reconciliation",
@@ -73,7 +73,7 @@ async function main(): Promise<void> {
   }
 
   const lifecycle = new LifecycleService({
-    sandboxes: service,
+    containers: service,
     logger,
     intervalMs: config.lifecycle.intervalMs,
   });

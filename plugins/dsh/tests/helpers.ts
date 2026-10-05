@@ -1,4 +1,4 @@
-import type { SandboxRuntime } from "@sessionbox/client";
+import type { ContainerRuntime } from "@sessionbox/client";
 import { SessionBoxClientError } from "@sessionbox/client";
 import type { SessionBoxRuntimeProvider } from "../src/connection.ts";
 
@@ -108,11 +108,11 @@ export function createFakeRuntime(): FakeRuntime {
 
 export function createFakeConnection(
   runtime: FakeRuntime,
-  sandboxId = "sbx_fake",
+  containerId = "ctr_fake",
 ): SessionBoxRuntimeProvider {
   return {
-    connect: async () => ({ sandboxId, runtime: runtime as unknown as SandboxRuntime }),
-    sandboxIdOrNull: () => sandboxId,
+    connect: async () => ({ containerId, runtime: runtime as unknown as ContainerRuntime }),
+    containerIdOrNull: () => containerId,
     close: async () => {},
   };
 }

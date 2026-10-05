@@ -63,12 +63,12 @@ try {
   });
   log("fs.edit", { after: edited.after.trim() });
 
-  const sandboxId = connection.sandboxIdOrNull();
-  log("sandbox", sandboxId);
+  const containerId = connection.containerIdOrNull();
+  log("container", containerId);
 
-  if (!keep && sandboxId !== null) {
-    const response = await fetch(`${baseUrl}/api/sandboxes/${sandboxId}`, { method: "DELETE" });
-    log("sandbox.delete", response.status);
+  if (!keep && containerId !== null) {
+    const response = await fetch(`${baseUrl}/api/containers/${containerId}`, { method: "DELETE" });
+    log("container.delete", response.status);
   }
 } catch (error) {
   console.error("dsh smoke failed:", error);

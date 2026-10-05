@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { SessionBoxClient } from "../src/client.ts";
 import { SessionBoxClientError } from "../src/errors.ts";
-import { SandboxRuntime } from "../src/runtime.ts";
+import { ContainerRuntime } from "../src/runtime.ts";
 import type { WebSocketLike, WebSocketListener, WebSocketMessageEvent } from "../src/websocket.ts";
 
 class FakeWebSocket implements WebSocketLike {
@@ -39,12 +39,12 @@ class FakeWebSocket implements WebSocketLike {
 }
 
 function createRuntime(options: { requestTimeoutMs?: number } = {}): {
-  runtime: SandboxRuntime;
+  runtime: ContainerRuntime;
   socket: FakeWebSocket;
 } {
   const socket = new FakeWebSocket();
-  const runtime = new SandboxRuntime({
-    sandboxId: "sbx_test",
+  const runtime = new ContainerRuntime({
+    containerId: "ctr_test",
     url: "ws://example/api/ws/agent",
     webSocketFactory: () => socket,
     ...(options.requestTimeoutMs !== undefined
@@ -54,23 +54,23 @@ function createRuntime(options: { requestTimeoutMs?: number } = {}): {
   return { runtime, socket };
 }
 
-async function connect(runtime: SandboxRuntime, socket: FakeWebSocket): Promise<void> {
+async function connect(runtime: ContainerRuntime, socket: FakeWebSocket): Promise<void> {
   const connecting = runtime.connect();
   socket.open();
   // Let connect() attach its message listener before the welcome arrives.
   await new Promise((resolve) => setTimeout(resolve, 0));
-  socket.receive({ type: "welcome", protocolVersion: 1 });
+  socket.receive({ type: "welcome", protocolVersion: 2 });
   await connecting;
 }
 
-describe("SandboxRuntime", () => {
+describe("ContainerRuntime", () => {
   it("performs the hello/welcome handshake", async () => {
     const { runtime, socket } = createRuntime();
     await connect(runtime, socket);
 
     expect(JSON.parse(socket.sent[0] ?? "{}")).toMatchObject({
       type: "hello",
-      protocolVersion: 1,
+      protocolVersion: 2,
       client: "sessionbox-client",
     });
     await runtime.close();
@@ -81,8 +81,8 @@ describe("SandboxRuntime", () => {
     await connect(runtime, socket);
 
     const pending = runtime.exec("uname -a");
-    const request = JSON.parse(socket.sent[1] ?? "{}") as { requestId: string; sandboxId: string };
-    expect(request.sandboxId).toBe("sbx_test");
+    const request = JSON.parse(socket.sent[1] ?? "{}") as { requestId: string; containerId: string };
+    expect(request.containerId).toBe("ctr_test");
     expect(request).toMatchObject({ type: "exec", command: "uname -a" });
 
     socket.receive({
@@ -108,7 +108,7 @@ describe("SandboxRuntime", () => {
       requestId: request.requestId,
       type: "error",
       code: "NOT_FOUND",
-      message: "the path was not found in the sandbox",
+      message: "the path was not found in the container",
     });
 
     await expect(pending).rejects.toMatchObject({ code: "NOT_FOUND" });
@@ -152,9 +152,9 @@ describe("SessionBoxClient", () => {
       fetchImpl: fetchMock as unknown as typeof fetch,
     });
 
-    await expect(client.listSandboxes()).resolves.toEqual([]);
+    await expect(client.listContainers()).resolves.toEqual([]);
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://box:8787/api/sandboxes",
+      "http://box:8787/api/containers",
       expect.objectContaining({
         headers: expect.objectContaining({ authorization: "Bearer secret" }),
       }),
@@ -166,7 +166,7 @@ describe("SessionBoxClient", () => {
       async () =>
         new Response(
           JSON.stringify({
-            error: { code: "SANDBOX_NOT_FOUND", message: "sandbox sbx_1 was not found" },
+            error: { code: "CONTAINER_NOT_FOUND", message: "container ctr_1 was not found" },
           }),
           { status: 404, headers: { "content-type": "application/json" } },
         ),
@@ -176,9 +176,9 @@ describe("SessionBoxClient", () => {
       fetchImpl: fetchMock as unknown as typeof fetch,
     });
 
-    await expect(client.getSandbox("sbx_1")).rejects.toMatchObject({
-      code: "SANDBOX_NOT_FOUND",
-      message: "sandbox sbx_1 was not found",
+    await expect(client.getContainer("ctr_1")).rejects.toMatchObject({
+      code: "CONTAINER_NOT_FOUND",
+      message: "container ctr_1 was not found",
     });
   });
 
@@ -192,13 +192,13 @@ describe("SessionBoxClient", () => {
       },
     });
 
-    const connecting = client.connect("sbx_test");
+    const connecting = client.connect("ctr_test");
     socket.open();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    socket.receive({ type: "welcome", protocolVersion: 1 });
+    socket.receive({ type: "welcome", protocolVersion: 2 });
 
     const runtime = await connecting;
-    expect(runtime).toBeInstanceOf(SandboxRuntime);
+    expect(runtime).toBeInstanceOf(ContainerRuntime);
     await runtime.close();
   });
 
@@ -213,10 +213,10 @@ describe("SessionBoxClient", () => {
       },
     });
 
-    const connecting = client.connect("sbx_test");
+    const connecting = client.connect("ctr_test");
     socket.open();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    socket.receive({ type: "welcome", protocolVersion: 1 });
+    socket.receive({ type: "welcome", protocolVersion: 2 });
 
     const runtime = await connecting;
     await runtime.close();

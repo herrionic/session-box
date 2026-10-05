@@ -11,7 +11,7 @@ import type { WebSocket } from "ws";
 import type { AgentGateway } from "../../agent/gateway.ts";
 import { PERMISSIONS, requirePermission } from "../../auth/principals.ts";
 import { isSessionBoxError } from "../../errors.ts";
-import type { SandboxService } from "../../sandbox/service.ts";
+import type { ContainerService } from "../../container/service.ts";
 import type { SessionBoxApp } from "../types.ts";
 
 const HANDSHAKE_TIMEOUT_MS = 10_000;
@@ -21,11 +21,11 @@ type AgentServerMessage = AgentResponse | { type: "welcome"; protocolVersion: nu
 /**
  * Agent WebSocket gateway: handshake (hello/welcome), then validated requests
  * dispatched through the agent gateway. A disconnect only ends temporary
- * access — it never stops or deletes the sandbox (PROJECT.md §39).
+ * access — it never stops or deletes the container (PROJECT.md §39).
  */
 export function registerAgentRoutes(
   app: SessionBoxApp,
-  deps: { gateway: AgentGateway; service: SandboxService },
+  deps: { gateway: AgentGateway; service: ContainerService },
 ): void {
   app.get("/api/ws/agent", { websocket: true }, (socket, request) => {
     handleAgent(socket, request, deps);
@@ -35,9 +35,9 @@ export function registerAgentRoutes(
 function handleAgent(
   socket: WebSocket,
   request: { log: FastifyBaseLogger; principal?: { id: string; permissions: string[]; type: "plugin" | "user" } },
-  deps: { gateway: AgentGateway; service: SandboxService },
+  deps: { gateway: AgentGateway; service: ContainerService },
 ): void {
-  const trackedSandboxes = new Set<string>();
+  const trackedContainers = new Set<string>();
   const gateway = deps.gateway;
   const service = deps.service;
   const send = (message: AgentServerMessage): void => {
@@ -109,11 +109,11 @@ function handleAgent(
       try {
         requirePermission(request.principal, permissionFor(agentRequest.type));
 
-        if (!trackedSandboxes.has(agentRequest.sandboxId)) {
-          trackedSandboxes.add(agentRequest.sandboxId);
-          await service.acquire(agentRequest.sandboxId);
+        if (!trackedContainers.has(agentRequest.containerId)) {
+          trackedContainers.add(agentRequest.containerId);
+          await service.acquire(agentRequest.containerId);
         }
-        await service.touch(agentRequest.sandboxId);
+        await service.touch(agentRequest.containerId);
 
         send(await gateway.handle(agentRequest));
       } catch (error) {
@@ -125,7 +125,7 @@ function handleAgent(
           {
             event: "agent.request.failed",
             requestId: agentRequest.requestId,
-            sandboxId: agentRequest.sandboxId,
+            containerId: agentRequest.containerId,
             err: error instanceof Error ? error.message : String(error),
           },
           "agent request failed",
@@ -140,8 +140,8 @@ function handleAgent(
   };
   socket.on("close", () => {
     cleanup();
-    for (const sandboxId of trackedSandboxes) {
-      void service.release(sandboxId);
+    for (const containerId of trackedContainers) {
+      void service.release(containerId);
     }
     request.log.info({ event: "agent.disconnected" }, "agent disconnected");
   });

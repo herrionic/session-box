@@ -9,10 +9,10 @@ import { open, seal } from "./sealing.ts";
  * sealed strings across restarts.
  */
 export interface CredentialStore {
-  save(sandboxId: string, name: string, plaintext: string): Promise<void>;
-  read(sandboxId: string, name: string): Promise<string | undefined>;
-  remove(sandboxId: string, name: string): Promise<void>;
-  removeAll(sandboxId: string): Promise<void>;
+  save(containerId: string, name: string, plaintext: string): Promise<void>;
+  read(containerId: string, name: string): Promise<string | undefined>;
+  remove(containerId: string, name: string): Promise<void>;
+  removeAll(containerId: string): Promise<void>;
 }
 
 export class EncryptedCredentialStore implements CredentialStore {
@@ -21,23 +21,23 @@ export class EncryptedCredentialStore implements CredentialStore {
     private readonly secrets: SecretRepository,
   ) {}
 
-  async save(sandboxId: string, name: string, plaintext: string): Promise<void> {
+  async save(containerId: string, name: string, plaintext: string): Promise<void> {
     const sealed = seal(plaintext, requireMasterKey(this.masterKey));
-    await this.secrets.save(entryKey(sandboxId, name), sealed);
+    await this.secrets.save(entryKey(containerId, name), sealed);
   }
 
-  async read(sandboxId: string, name: string): Promise<string | undefined> {
-    const sealed = await this.secrets.get(entryKey(sandboxId, name));
+  async read(containerId: string, name: string): Promise<string | undefined> {
+    const sealed = await this.secrets.get(entryKey(containerId, name));
     if (sealed === undefined) return undefined;
     return open(sealed, requireMasterKey(this.masterKey));
   }
 
-  async remove(sandboxId: string, name: string): Promise<void> {
-    await this.secrets.delete(entryKey(sandboxId, name));
+  async remove(containerId: string, name: string): Promise<void> {
+    await this.secrets.delete(entryKey(containerId, name));
   }
 
-  async removeAll(sandboxId: string): Promise<void> {
-    await this.secrets.deleteByPrefix(`${sandboxId}:`);
+  async removeAll(containerId: string): Promise<void> {
+    await this.secrets.deleteByPrefix(`${containerId}:`);
   }
 }
 
@@ -48,6 +48,6 @@ export class InMemoryCredentialStore extends EncryptedCredentialStore {
   }
 }
 
-function entryKey(sandboxId: string, name: string): string {
-  return `${sandboxId}:${name}`;
+function entryKey(containerId: string, name: string): string {
+  return `${containerId}:${name}`;
 }

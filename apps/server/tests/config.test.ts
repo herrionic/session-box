@@ -27,12 +27,12 @@ describe("loadConfig", () => {
   it("parses configured clients", () => {
     const config = loadConfig({
       SESSIONBOX_CLIENTS: JSON.stringify([
-        { id: "dsh", token: "dsh-token", permissions: ["sandbox:read"] },
+        { id: "dsh", token: "dsh-token", permissions: ["container:read"] },
       ]),
     });
 
     expect(config.auth.clients).toEqual([
-      { id: "dsh", token: "dsh-token", permissions: ["sandbox:read"] },
+      { id: "dsh", token: "dsh-token", permissions: ["container:read"] },
     ]);
   });
 

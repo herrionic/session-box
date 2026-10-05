@@ -153,13 +153,13 @@ button.link {
   margin: 8px 0 0;
 }
 
-.sandbox-table {
+.container-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
 }
 
-.sandbox-table th {
+.container-table th {
   text-align: left;
   color: var(--muted);
   font-weight: 600;
@@ -170,13 +170,13 @@ button.link {
   border-bottom: 1px solid var(--border);
 }
 
-.sandbox-table td {
+.container-table td {
   padding: 12px 10px;
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
 
-.sandbox-table tr:last-child td {
+.container-table tr:last-child td {
   border-bottom: none;
 }
 

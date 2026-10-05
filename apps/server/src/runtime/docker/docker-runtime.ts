@@ -4,17 +4,19 @@ import type { Duplex } from "node:stream";
 import Docker from "dockerode";
 import type { Logger } from "../../logging.ts";
 import { RuntimeError, RuntimeNotFoundError } from "../types.ts";
-import type { RuntimeCreateSpec, RuntimeSandbox, SandboxRuntime } from "../types.ts";
+import type { RuntimeCreateSpec, RuntimeContainer, ContainerRuntime } from "../types.ts";
 import { SERVER_VERSION } from "../../version.ts";
 
 const MANAGED_LABEL = "sessionbox.managed";
-const SANDBOX_ID_LABEL = "sessionbox.sandbox-id";
-const SANDBOX_NAME_LABEL = "sessionbox.name";
+const CONTAINER_ID_LABEL = "sessionbox.container-id";
+/** Containers created before the sandbox→container rename carry this label. */
+const LEGACY_CONTAINER_ID_LABEL = "sessionbox.sandbox-id";
+const CONTAINER_NAME_LABEL = "sessionbox.name";
 const VERSION_LABEL = "sessionbox.version";
 const DEFAULT_PIDS_LIMIT = 512;
 
 /**
- * sshd runs as root inside the sandbox and drops to the non-root "agent" user
+ * sshd runs as root inside the container and drops to the non-root "agent" user
  * for each session. These are the only capabilities it needs; everything else
  * is dropped (PROJECT.md §21).
  *
@@ -22,7 +24,7 @@ const DEFAULT_PIDS_LIMIT = 512;
  * AUDIT_WRITE: sshd writes /proc/self/loginuid during session setup; without
  * it the session is torn down right after authentication (no PTY).
  */
-const SANDBOX_CAPABILITIES = [
+const CONTAINER_CAPABILITIES = [
   "AUDIT_WRITE",
   "CHOWN",
   "DAC_OVERRIDE",
@@ -44,9 +46,9 @@ export interface DockerRuntimeOptions {
  * The only module allowed to import dockerode. Everything Docker-specific
  * (labels, security flags, bridge network, container IPs, log multiplexing)
  * stays inside this adapter; the rest of the server only sees
- * `SandboxRuntime`.
+ * `ContainerRuntime`.
  */
-export class DockerRuntime implements SandboxRuntime {
+export class DockerRuntime implements ContainerRuntime {
   readonly runtimeId = "docker";
 
   private readonly docker: Docker;
@@ -64,19 +66,19 @@ export class DockerRuntime implements SandboxRuntime {
       return;
     } catch (error) {
       if (dockerStatusCode(error) !== 404) {
-        throw this.wrap(error, "inspect sandbox image");
+        throw this.wrap(error, "inspect container image");
       }
     }
 
     this.options.logger.info(
-      { event: "sandbox.image.pull", image },
-      "sandbox image missing locally, pulling it",
+      { event: "container.image.pull", image },
+      "container image missing locally, pulling it",
     );
 
     await new Promise<void>((resolve, reject) => {
       this.docker.pull(image, {}, (pullError, stream) => {
         if (pullError) {
-          reject(this.wrap(pullError, "pull sandbox image"));
+          reject(this.wrap(pullError, "pull container image"));
           return;
         }
         if (!stream) {
@@ -85,7 +87,7 @@ export class DockerRuntime implements SandboxRuntime {
         }
         this.docker.modem.followProgress(stream, (finishError) => {
           if (finishError) {
-            reject(this.wrap(finishError, "pull sandbox image"));
+            reject(this.wrap(finishError, "pull container image"));
             return;
           }
           resolve();
@@ -94,28 +96,28 @@ export class DockerRuntime implements SandboxRuntime {
     });
   }
 
-  async create(spec: RuntimeCreateSpec): Promise<RuntimeSandbox> {
+  async create(spec: RuntimeCreateSpec): Promise<RuntimeContainer> {
     await this.prepare();
 
     try {
       const container = await this.docker.createContainer({
-        name: containerNameFor(spec.sandboxId),
+        name: containerNameFor(spec.containerId),
         Image: spec.image,
         WorkingDir: spec.workspace,
         Env: toEnvArray(spec.env),
         Labels: {
           [MANAGED_LABEL]: "true",
-          [SANDBOX_ID_LABEL]: spec.sandboxId,
-          [SANDBOX_NAME_LABEL]: spec.name,
+          [CONTAINER_ID_LABEL]: spec.containerId,
+          [CONTAINER_NAME_LABEL]: spec.name,
           [VERSION_LABEL]: SERVER_VERSION,
         },
         HostConfig: {
-          // Sandboxes never join the default bridge and never publish ports;
+          // Containers never join the default bridge and never publish ports;
           // the server reaches them over this dedicated network only.
           NetworkMode: this.options.networkName,
           Privileged: false,
           CapDrop: ["ALL"],
-          CapAdd: SANDBOX_CAPABILITIES,
+          CapAdd: CONTAINER_CAPABILITIES,
           SecurityOpt: ["no-new-privileges"],
           PidsLimit: spec.resources.pidsLimit ?? DEFAULT_PIDS_LIMIT,
           RestartPolicy: { Name: "no" },
@@ -129,9 +131,9 @@ export class DockerRuntime implements SandboxRuntime {
         },
       });
 
-      return { ref: container.id, sandboxId: spec.sandboxId, status: "stopped" };
+      return { ref: container.id, containerId: spec.containerId, status: "stopped" };
     } catch (error) {
-      throw this.wrap(error, `create sandbox ${spec.sandboxId}`);
+      throw this.wrap(error, `create container ${spec.containerId}`);
     }
   }
 
@@ -140,7 +142,7 @@ export class DockerRuntime implements SandboxRuntime {
       await this.docker.getContainer(ref).start();
     } catch (error) {
       if (dockerStatusCode(error) === 304) return; // already running
-      throw this.wrap(error, "start sandbox");
+      throw this.wrap(error, "start container");
     }
   }
 
@@ -149,7 +151,7 @@ export class DockerRuntime implements SandboxRuntime {
       await this.docker.getContainer(ref).stop({ t: timeoutSeconds });
     } catch (error) {
       if (dockerStatusCode(error) === 304) return; // already stopped
-      throw this.wrap(error, "stop sandbox");
+      throw this.wrap(error, "stop container");
     }
   }
 
@@ -158,7 +160,7 @@ export class DockerRuntime implements SandboxRuntime {
       await this.docker.getContainer(ref).restart({ t: timeoutSeconds });
     } catch (error) {
       if (dockerStatusCode(error) === 304) return;
-      throw this.wrap(error, "restart sandbox");
+      throw this.wrap(error, "restart container");
     }
   }
 
@@ -169,22 +171,22 @@ export class DockerRuntime implements SandboxRuntime {
         .remove({ force: options.force ?? true, v: true });
     } catch (error) {
       if (dockerStatusCode(error) === 404) return; // already gone
-      throw this.wrap(error, "remove sandbox");
+      throw this.wrap(error, "remove container");
     }
   }
 
-  async inspect(ref: string): Promise<RuntimeSandbox | undefined> {
+  async inspect(ref: string): Promise<RuntimeContainer | undefined> {
     let info: Docker.ContainerInspectInfo;
     try {
       info = await this.docker.getContainer(ref).inspect();
     } catch (error) {
       if (dockerStatusCode(error) === 404) return undefined;
-      throw this.wrap(error, "inspect sandbox");
+      throw this.wrap(error, "inspect container");
     }
-    return toRuntimeSandbox(info);
+    return toRuntimeContainer(info);
   }
 
-  async list(): Promise<RuntimeSandbox[]> {
+  async list(): Promise<RuntimeContainer[]> {
     try {
       const containers = await this.docker.listContainers({
         all: true,
@@ -192,14 +194,14 @@ export class DockerRuntime implements SandboxRuntime {
       });
       return containers.map((container) => ({
         ref: container.Id,
-        sandboxId: container.Labels?.[SANDBOX_ID_LABEL],
-        name: container.Labels?.[SANDBOX_NAME_LABEL] ?? stripContainerPrefix(container.Names?.[0]),
+        containerId: container.Labels?.[CONTAINER_ID_LABEL] ?? container.Labels?.[LEGACY_CONTAINER_ID_LABEL],
+        name: container.Labels?.[CONTAINER_NAME_LABEL] ?? stripContainerPrefix(container.Names?.[0]),
         image: container.Image,
         createdAt: new Date(container.Created * 1000).toISOString(),
         status: container.State === "running" ? "running" : "stopped",
       }));
     } catch (error) {
-      throw this.wrap(error, "list sandboxes");
+      throw this.wrap(error, "list containers");
     }
   }
 
@@ -213,17 +215,17 @@ export class DockerRuntime implements SandboxRuntime {
       });
       return demuxDockerLogs(buffer);
     } catch (error) {
-      throw this.wrap(error, "read sandbox logs");
+      throw this.wrap(error, "read container logs");
     }
   }
 
   async openPortStream(ref: string, port: number): Promise<Duplex> {
-    const sandbox = await this.inspectContainerRaw(ref);
-    const network = sandbox.NetworkSettings?.Networks?.[this.options.networkName];
+    const container = await this.inspectContainerRaw(ref);
+    const network = container.NetworkSettings?.Networks?.[this.options.networkName];
     const ip = network?.IPAddress;
     if (!ip) {
       throw new RuntimeError(
-        `sandbox is not attached to the managed network "${this.options.networkName}"`,
+        `container is not attached to the managed network "${this.options.networkName}"`,
       );
     }
 
@@ -232,7 +234,7 @@ export class DockerRuntime implements SandboxRuntime {
       socket.setNoDelay(true);
       socket.once("connect", () => resolve(socket));
       socket.once("error", (error) => {
-        reject(new RuntimeError("failed to open a connection into the sandbox", { cause: error }));
+        reject(new RuntimeError("failed to open a connection into the container", { cause: error }));
       });
     });
   }
@@ -240,7 +242,7 @@ export class DockerRuntime implements SandboxRuntime {
   /**
    * Idempotent runtime preparation, memoized until it fails: ensures the
    * managed network exists and that the server container itself is attached
-   * to it (needed to reach sandbox IPs when deployed as a container).
+   * to it (needed to reach container IPs when deployed as a container).
    */
   private prepare(): Promise<void> {
     if (!this.preparePromise) {
@@ -268,7 +270,7 @@ export class DockerRuntime implements SandboxRuntime {
     }
 
     this.options.logger.info(
-      { event: "sandbox.network.created", network: this.options.networkName },
+      { event: "container.network.created", network: this.options.networkName },
       "creating managed docker network",
     );
     try {
@@ -295,7 +297,7 @@ export class DockerRuntime implements SandboxRuntime {
       if (attached) return;
 
       this.options.logger.info(
-        { event: "sandbox.network.self_attach", network: this.options.networkName },
+        { event: "container.network.self_attach", network: this.options.networkName },
         "attaching server container to managed network",
       );
       await this.docker.getNetwork(this.options.networkName).connect({ Container: hostname });
@@ -303,7 +305,7 @@ export class DockerRuntime implements SandboxRuntime {
       // Running outside Docker (development) is expected to land here.
       this.options.logger.warn(
         {
-          event: "sandbox.network.self_attach_failed",
+          event: "container.network.self_attach_failed",
           network: this.options.networkName,
           err: errorMessage(error),
         },
@@ -319,7 +321,7 @@ export class DockerRuntime implements SandboxRuntime {
       if (dockerStatusCode(error) === 404) {
         throw new RuntimeNotFoundError(undefined, { cause: error });
       }
-      throw this.wrap(error, "inspect sandbox");
+      throw this.wrap(error, "inspect container");
     }
   }
 
@@ -336,8 +338,8 @@ export class DockerRuntime implements SandboxRuntime {
   }
 }
 
-function containerNameFor(sandboxId: string): string {
-  return `sessionbox-${sandboxId}`;
+function containerNameFor(containerId: string): string {
+  return `sessionbox-${containerId}`;
 }
 
 function toEnvArray(env: Record<string, string> | undefined): string[] | undefined {
@@ -345,7 +347,7 @@ function toEnvArray(env: Record<string, string> | undefined): string[] | undefin
   return Object.entries(env).map(([key, value]) => `${key}=${value}`);
 }
 
-function toRuntimeSandbox(info: Docker.ContainerInspectInfo): RuntimeSandbox {
+function toRuntimeContainer(info: Docker.ContainerInspectInfo): RuntimeContainer {
   const startedAtRaw = info.State?.StartedAt;
   const startedAt =
     startedAtRaw && !startedAtRaw.startsWith("0001-") ? startedAtRaw : undefined;
@@ -354,8 +356,8 @@ function toRuntimeSandbox(info: Docker.ContainerInspectInfo): RuntimeSandbox {
 
   return {
     ref: info.Id,
-    sandboxId: info.Config?.Labels?.[SANDBOX_ID_LABEL],
-    name: info.Config?.Labels?.[SANDBOX_NAME_LABEL] ?? stripContainerPrefix(info.Name),
+    containerId: info.Config?.Labels?.[CONTAINER_ID_LABEL] ?? info.Config?.Labels?.[LEGACY_CONTAINER_ID_LABEL],
+    name: info.Config?.Labels?.[CONTAINER_NAME_LABEL] ?? stripContainerPrefix(info.Name),
     image: info.Config?.Image,
     status: info.State?.Running ? "running" : "stopped",
     ...(startedAt ? { startedAt } : {}),

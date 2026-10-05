@@ -2,7 +2,7 @@ import { posix } from "node:path";
 import { Client, type ClientChannel, type SFTPWrapper, type Stats } from "ssh2";
 import type { CredentialStore } from "../credentials/store.ts";
 import type { Logger } from "../logging.ts";
-import type { SandboxRuntime } from "../runtime/types.ts";
+import type { ContainerRuntime } from "../runtime/types.ts";
 import { SSH_PRIVATE_KEY_CREDENTIAL } from "./keypair.ts";
 import {
   SshError,
@@ -21,7 +21,7 @@ import {
 } from "./session.ts";
 
 export interface Ssh2SessionFactoryOptions {
-  runtime: SandboxRuntime;
+  runtime: ContainerRuntime;
   credentials: CredentialStore;
   logger: Logger;
   port?: number;
@@ -37,7 +37,7 @@ const DEFAULT_TERM = "xterm-256color";
 
 /**
  * SSH/SFTP implementation over ssh2. The TCP transport always comes from
- * `SandboxRuntime.openPortStream`, so the server never dials a sandbox
+ * `ContainerRuntime.openPortStream`, so the server never dials a container
  * directly and never exposes ports or credentials (PROJECT.md §14, §18).
  */
 export class Ssh2SessionFactory implements SshSessionFactory {
@@ -45,11 +45,11 @@ export class Ssh2SessionFactory implements SshSessionFactory {
 
   async create(request: SshSessionRequest): Promise<SshSession> {
     const privateKey = await this.options.credentials.read(
-      request.sandboxId,
+      request.containerId,
       SSH_PRIVATE_KEY_CREDENTIAL,
     );
     if (privateKey === undefined) {
-      throw new SshUnavailableError("no SSH credential is stored for this sandbox");
+      throw new SshUnavailableError("no SSH credential is stored for this container");
     }
 
     const timeoutMs = this.options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
@@ -61,7 +61,7 @@ export class Ssh2SessionFactory implements SshSessionFactory {
         this.options.port ?? DEFAULT_SSH_PORT,
       );
     } catch (error) {
-      throw new SshUnavailableError("sandbox SSH endpoint is not reachable", { cause: error });
+      throw new SshUnavailableError("container SSH endpoint is not reachable", { cause: error });
     }
 
     const client = new Client();
@@ -105,7 +105,7 @@ export class Ssh2SessionFactory implements SshSessionFactory {
     });
 
     this.options.logger.info(
-      { event: "ssh.connection.created", sandboxId: request.sandboxId },
+      { event: "ssh.connection.created", containerId: request.containerId },
       "SSH connection established",
     );
 
@@ -138,7 +138,7 @@ class Ssh2Session implements SshSession {
         if (error) {
           settled = true;
           clearTimeout(timer);
-          reject(new SshError("failed to start command in the sandbox", { cause: error }));
+          reject(new SshError("failed to start command in the container", { cause: error }));
           return;
         }
 
@@ -272,7 +272,7 @@ class Ssh2Session implements SshSession {
         },
         (error, stream) => {
           if (error) {
-            reject(new SshError("failed to open a shell in the sandbox", { cause: error }));
+            reject(new SshError("failed to open a shell in the container", { cause: error }));
             return;
           }
 

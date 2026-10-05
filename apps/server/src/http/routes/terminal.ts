@@ -6,10 +6,10 @@ import {
 import type { WebSocket } from "ws";
 import { PERMISSIONS, requirePermission, type Principal } from "../../auth/principals.ts";
 import { SessionBoxError, isSessionBoxError } from "../../errors.ts";
-import type { SandboxService } from "../../sandbox/service.ts";
+import type { ContainerService } from "../../container/service.ts";
 import type { SessionBoxApp } from "../types.ts";
 
-const ParamsSchema = z.strictObject({ sandboxId: z.string().min(1) });
+const ParamsSchema = z.strictObject({ containerId: z.string().min(1) });
 const QuerySchema = z.strictObject({
   cols: z.coerce.number().int().min(1).max(1000).optional(),
   rows: z.coerce.number().int().min(1).max(1000).optional(),
@@ -21,9 +21,9 @@ const QuerySchema = z.strictObject({
  */
 export function registerTerminalRoutes(
   app: SessionBoxApp,
-  deps: { service: SandboxService },
+  deps: { service: ContainerService },
 ): void {
-  app.get("/api/ws/terminal/:sandboxId", { websocket: true }, (socket, request) => {
+  app.get("/api/ws/terminal/:containerId", { websocket: true }, (socket, request) => {
     void handleTerminal(socket, request, deps.service);
   });
 }
@@ -31,7 +31,7 @@ export function registerTerminalRoutes(
 async function handleTerminal(
   socket: WebSocket,
   request: { params: unknown; query: unknown; log: import("fastify").FastifyBaseLogger; principal?: Principal },
-  service: SandboxService,
+  service: ContainerService,
 ): Promise<void> {
   const send = (message: TerminalServerMessage): void => {
     if (socket.readyState === socket.OPEN) {
@@ -41,10 +41,10 @@ async function handleTerminal(
 
   try {
     requirePermission(request.principal, PERMISSIONS.execute);
-    const { sandboxId } = ParamsSchema.parse(request.params);
+    const { containerId } = ParamsSchema.parse(request.params);
     const query = QuerySchema.parse(request.query ?? {});
 
-    const session = await service.openSshSession(sandboxId);
+    const session = await service.openSshSession(containerId);
     const shell = await session.openShell({
       cols: query.cols ?? 80,
       rows: query.rows ?? 24,
@@ -55,22 +55,22 @@ async function handleTerminal(
       },
       onError: (error) => {
         request.log.warn(
-          { event: "terminal.shell_error", sandboxId, err: error.message },
+          { event: "terminal.shell_error", containerId, err: error.message },
           "terminal shell error",
         );
       },
     });
 
-    await service.acquire(sandboxId);
-    send({ type: "ready", sandboxId });
-    request.log.info({ event: "terminal.opened", sandboxId }, "terminal opened");
+    await service.acquire(containerId);
+    send({ type: "ready", containerId });
+    request.log.info({ event: "terminal.opened", containerId }, "terminal opened");
 
     socket.on("message", (raw) => {
       try {
         const message = TerminalClientMessageSchema.parse(JSON.parse(String(raw)));
         if (message.type === "input") {
           shell.write(message.data);
-          void service.touch(sandboxId);
+          void service.touch(containerId);
         } else {
           shell.resize(message.cols, message.rows);
         }
@@ -85,8 +85,8 @@ async function handleTerminal(
 
     const closeShell = (): void => {
       shell.close();
-      void service.release(sandboxId);
-      request.log.info({ event: "terminal.closed", sandboxId }, "terminal closed");
+      void service.release(containerId);
+      request.log.info({ event: "terminal.closed", containerId }, "terminal closed");
     };
     socket.on("close", closeShell);
     socket.on("error", closeShell);

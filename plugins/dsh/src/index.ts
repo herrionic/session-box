@@ -9,15 +9,15 @@ export const name = "sessionbox";
 /**
  * SessionBox capability providers for DeepSeek Harness.
  *
- * One DSH process binds one sandbox: `ctx.fs` and `ctx.shell` execute inside
+ * One DSH process binds one container: `ctx.fs` and `ctx.shell` execute inside
  * it, so the harness's native file and bash tools run transparently in the
- * sandbox without new model-visible tools. DSH's execution world is per
+ * container without new model-visible tools. DSH's execution world is per
  * harness process (the same model as its SSH helper), so run one process per
  * session for per-session isolation.
  *
  * Configuration comes from `cordis.yml` plugin config, falling back to
- * `SESSIONBOX_URL`, `SESSIONBOX_TOKEN`, `SESSIONBOX_SANDBOX`,
- * `SESSIONBOX_SANDBOX_NAME`, `SESSIONBOX_WORKSPACE_ROOT`, `SESSIONBOX_HOST_CWD`.
+ * `SESSIONBOX_URL`, `SESSIONBOX_TOKEN`, `SESSIONBOX_CONTAINER`,
+ * `SESSIONBOX_CONTAINER_NAME`, `SESSIONBOX_WORKSPACE_ROOT`, `SESSIONBOX_HOST_CWD`.
  */
 export async function apply(
   ctx: Context,
@@ -45,7 +45,7 @@ export async function apply(
     maxOutputBytes: resolved.maxOutputBytes,
   });
 
-  ctx.effect(() => () => connection.close(), "sessionbox: sandbox connection");
+  ctx.effect(() => () => connection.close(), "sessionbox: container connection");
 }
 
 function stripUndefined(config: Partial<SessionBoxPluginConfig>): Partial<SessionBoxPluginConfig> {
