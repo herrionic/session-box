@@ -125,14 +125,25 @@ export const api = {
   },
 
   downloadUrl: (id: string, path: string): string =>
-    `/api/sandboxes/${id}/files/download?path=${encodeURIComponent(path)}${tokenQuery()}`,
+    `/api/sandboxes/${id}/files/download?${buildQuery({ path })}`,
 
-  terminalUrl: (id: string): string =>
-    `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/api/ws/terminal/${id}${tokenQuery()}`,
+  terminalUrl: (id: string, params?: { cols?: number; rows?: number }): string =>
+    `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/api/ws/terminal/${id}?${buildQuery(
+      { cols: params?.cols, rows: params?.rows },
+    )}`,
 };
 
-/** WebSocket and download URLs cannot set headers; carry the token in the query. */
-function tokenQuery(): string {
+/**
+ * WebSocket and download URLs cannot set headers; carry the token in the
+ * query. Built with URLSearchParams so an existing query is never concatenated
+ * twice.
+ */
+function buildQuery(params: Record<string, string | number | undefined>): string {
+  const query = new URLSearchParams();
   const token = getToken();
-  return token === null ? "" : `?token=${encodeURIComponent(token)}`;
+  if (token !== null) query.set("token", token);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) query.set(key, String(value));
+  }
+  return query.toString();
 }

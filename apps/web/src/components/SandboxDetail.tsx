@@ -219,7 +219,8 @@ function Overview({
           <dd>{formatDate(sandbox.lastActivityAt)}</dd>
           <dt>Resources</dt>
           <dd>
-            {sandbox.resources.cpuLimit ?? "—"} CPU · {sandbox.resources.memoryLimitMb ?? "—"} MB
+            {sandbox.resources.cpuLimit ?? "unlimited"} CPU ·{" "}
+            {sandbox.resources.memoryLimitMb ?? "unlimited"} MB
           </dd>
           <dt>Active connections</dt>
           <dd>{sandbox.activeConnections}</dd>

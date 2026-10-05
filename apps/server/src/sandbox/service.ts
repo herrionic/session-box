@@ -3,6 +3,7 @@ import {
   type CreateSandboxRequest,
   type LifecyclePolicy,
   type LifecyclePolicyPatch,
+  type SandboxResources,
   type SandboxStatus,
   type UpdateSandboxSettingsRequest,
 } from "@sessionbox/protocol";
@@ -36,6 +37,13 @@ export interface SandboxServiceOptions {
   /** Clock used for record timestamps; injectable for tests. */
   now?: () => number;
 }
+
+/** Default limits so every sandbox is bounded even when none are requested. */
+const DEFAULT_RESOURCES: SandboxResources = {
+  cpuLimit: 1,
+  memoryLimitMb: 1024,
+  pidsLimit: 512,
+};
 
 /**
  * Owns sandbox lifecycle and state transitions. Depends only on the
@@ -81,7 +89,7 @@ export class SandboxService {
       runtime: this.runtime.runtimeId,
       status: "creating",
       workspace: this.workspace,
-      resources: request.resources ?? {},
+      resources: { ...DEFAULT_RESOURCES, ...request.resources },
       lifecycle: resolveLifecyclePolicy(request.lifecycle),
       createdAt: nowIso(this.now()),
       activeConnections: 0,

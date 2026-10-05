@@ -23,7 +23,7 @@ export function TerminalPanel({ sandboxId }: { sandboxId: string }): JSX.Element
     setError(null);
 
     const socket = new WebSocket(
-      `${api.terminalUrl(sandboxId)}?cols=${term.cols}&rows=${term.rows}`,
+      api.terminalUrl(sandboxId, { cols: term.cols, rows: term.rows }),
     );
     socketRef.current = socket;
 

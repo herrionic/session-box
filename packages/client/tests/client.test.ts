@@ -201,4 +201,24 @@ describe("SessionBoxClient", () => {
     expect(runtime).toBeInstanceOf(SandboxRuntime);
     await runtime.close();
   });
+
+  it("carries the token on the agent WebSocket URL when configured", async () => {
+    const socket = new FakeWebSocket();
+    const client = new SessionBoxClient({
+      baseUrl: "https://box:8787",
+      token: "secret-token",
+      webSocketFactory: (url) => {
+        expect(url).toBe("wss://box:8787/api/ws/agent?token=secret-token");
+        return socket;
+      },
+    });
+
+    const connecting = client.connect("sbx_test");
+    socket.open();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    socket.receive({ type: "welcome", protocolVersion: 1 });
+
+    const runtime = await connecting;
+    await runtime.close();
+  });
 });

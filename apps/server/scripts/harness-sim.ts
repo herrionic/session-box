@@ -4,7 +4,7 @@
  * Two independent "agent sessions" each claim a sandbox, prove workspace
  * isolation, reconnect to the same sandbox and clean up.
  *
- *   pnpm --filter @sessionbox/server harness-sim --url http://host:8787 [--keep]
+ *   pnpm --filter @sessionbox/server harness-sim --url http://host:8787 [--token <token>] [--keep]
  */
 import { SessionBoxClient } from "@sessionbox/client";
 
@@ -12,13 +12,18 @@ const args = process.argv.slice(2);
 const urlIndex = args.indexOf("--url");
 const baseUrl = urlIndex >= 0 ? args[urlIndex + 1] : "http://127.0.0.1:8787";
 const keep = args.includes("--keep");
+const tokenIndex = args.indexOf("--token");
+const token = tokenIndex >= 0 ? args[tokenIndex + 1] : process.env.SESSIONBOX_TOKEN;
 
 if (baseUrl === undefined || baseUrl === "") {
-  console.error("usage: harness-sim.ts --url <baseUrl> [--keep]");
+  console.error("usage: harness-sim.ts --url <baseUrl> [--token <token>] [--keep]");
   process.exit(2);
 }
 
-const client = new SessionBoxClient({ baseUrl });
+const client = new SessionBoxClient({
+  baseUrl,
+  ...(token !== undefined && token !== "" ? { token } : {}),
+});
 const log = (message: string): void => {
   console.log(message);
 };

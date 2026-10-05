@@ -20,6 +20,12 @@ export function createAuthHook(config: AuthConfig): (request: FastifyRequest) =>
   const enabled = config.clients.length > 0;
 
   return async function authHook(request: FastifyRequest): Promise<void> {
+    // `?token=` is a transport detail for WebSocket and download URLs; remove
+    // it before strict route schemas parse the query.
+    if (request.query !== null && typeof request.query === "object") {
+      delete (request.query as Record<string, unknown>).token;
+    }
+
     if (!enabled) {
       request.principal = { id: "anonymous", type: "user", permissions: [ALL_PERMISSIONS] };
       return;

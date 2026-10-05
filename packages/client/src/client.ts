@@ -105,6 +105,11 @@ export class SessionBoxClient {
     url.pathname = "/api/ws/agent";
     url.search = "";
     url.hash = "";
+    // The agent WebSocket cannot set headers; the token travels in the query
+    // and is stripped by the server before route validation.
+    if (this.token !== undefined) {
+      url.searchParams.set("token", this.token);
+    }
     return url.toString();
   }
 

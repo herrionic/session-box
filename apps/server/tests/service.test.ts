@@ -86,12 +86,20 @@ describe("SandboxService.create", () => {
 
     expect(record.name).toBe("agent-workspace");
     expect(record.image).toBe("custom/base:1");
-    expect(record.resources).toEqual({ cpuLimit: 2, memoryLimitMb: 2048 });
+    expect(record.resources).toEqual({ cpuLimit: 2, memoryLimitMb: 2048, pidsLimit: 512 });
     expect(record.lifecycle).toEqual({
       autoStop: true,
       idleTimeoutSeconds: 300,
       deleteAfterStop: false,
     });
+  });
+
+  it("applies bounded default resources when none are requested", async () => {
+    const { service } = createFixture();
+
+    const record = await service.create({});
+
+    expect(record.resources).toEqual({ cpuLimit: 1, memoryLimitMb: 1024, pidsLimit: 512 });
   });
 
   it("marks the sandbox failed when the runtime cannot create it", async () => {

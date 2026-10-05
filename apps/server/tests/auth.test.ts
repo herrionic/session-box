@@ -130,6 +130,17 @@ describe("HTTP authentication", () => {
     expect(response.statusCode).toBe(200);
   });
 
+  it("strips the query token before strict route schemas run", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sandboxes/sbx_missing/files?path=%2Fworkspace&token=dsh-token",
+    });
+
+    // The sandbox does not exist → 404; a strict-schema failure would be 400.
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe("SANDBOX_NOT_FOUND");
+  });
+
   it("keeps the health probe open", async () => {
     const response = await app.inject({ method: "GET", url: "/api/health" });
 

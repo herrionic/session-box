@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { AgentGateway } from "../src/agent/gateway.ts";
+import { loadAuthConfig } from "../src/auth/config.ts";
 import type { ServerConfig } from "../src/config.ts";
 import { InMemoryCredentialStore } from "../src/credentials/store.ts";
 import { SandboxFilesService } from "../src/files/service.ts";
@@ -30,7 +31,7 @@ const testConfig: ServerConfig = {
   lifecycle: { intervalMs: 1000 },
 };
 
-async function createFixture(): Promise<{
+async function createFixture(options: { authClients?: string } = {}): Promise<{
   app: SessionBoxApp;
   port: number;
   sandboxId: string;
@@ -58,8 +59,12 @@ async function createFixture(): Promise<{
     logger,
   });
 
+  const config: ServerConfig = {
+    ...testConfig,
+    auth: loadAuthConfig(options.authClients),
+  };
   const app = await buildApp({
-    config: testConfig,
+    config,
     logger,
     runtime,
     service,
@@ -156,6 +161,22 @@ describe("terminal WebSocket", () => {
     expect(await client.next()).toEqual({ type: "exit", code: 0 });
 
     await waitFor(() => shell()?.closed === true);
+  });
+
+  it("accepts the bearer token as a query parameter when auth is enabled", async () => {
+    const { app, port, sandboxId } = await createFixture({
+      authClients: JSON.stringify([{ id: "ui", token: "ui-token", permissions: ["*"] }]),
+    });
+    cleanups.push(() => app.close());
+
+    const client = await connect(
+      `ws://127.0.0.1:${port}/api/ws/terminal/${sandboxId}?token=ui-token&cols=90&rows=20`,
+    );
+    cleanups.push(async () => {
+      client.socket.close();
+    });
+
+    expect(await client.next()).toEqual({ type: "ready", sandboxId });
   });
 
   it("reports unknown sandboxes with a stable error", async () => {
