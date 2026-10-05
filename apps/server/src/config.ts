@@ -1,5 +1,9 @@
 import type { SandboxResources } from "@sessionbox/protocol";
 
+import { join } from "node:path";
+import type { AuthConfig } from "./auth/config.ts";
+import { loadAuthConfig } from "./auth/config.ts";
+
 export interface DockerRuntimeConfig {
   socketPath: string;
   networkName: string;
@@ -13,10 +17,16 @@ export interface ServerConfig {
   runtime: "docker";
   logLevel: string;
   dataDir: string;
+  databaseFile: string;
   webDist?: string;
   /** Raw SESSIONBOX_MASTER_KEY value; parsed and validated where it is used. */
   masterKey?: string;
   docker: DockerRuntimeConfig;
+  auth: AuthConfig;
+  lifecycle: {
+    /** How often the auto-stop policy is evaluated. */
+    intervalMs: number;
+  };
 }
 
 /**
@@ -33,15 +43,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
 
   const webDist = env.SESSIONBOX_WEB_DIST?.trim();
   const masterKey = env.SESSIONBOX_MASTER_KEY?.trim();
+  const dataDir = env.SESSIONBOX_DATA_DIR?.trim() || "./data";
 
   return {
     host: env.SESSIONBOX_HOST?.trim() || "0.0.0.0",
     port: parsePositiveInteger(env.SESSIONBOX_PORT, "SESSIONBOX_PORT") ?? 8787,
     runtime,
     logLevel: env.SESSIONBOX_LOG_LEVEL?.trim() || "info",
-    dataDir: env.SESSIONBOX_DATA_DIR?.trim() || "./data",
+    dataDir,
+    databaseFile: env.SESSIONBOX_DATABASE_FILE?.trim() || join(dataDir, "sessionbox.db"),
     ...(webDist ? { webDist } : {}),
     ...(masterKey ? { masterKey } : {}),
+    auth: loadAuthConfig(env.SESSIONBOX_CLIENTS),
+    lifecycle: {
+      intervalMs: parsePositiveInteger(env.SESSIONBOX_LIFECYCLE_INTERVAL_MS, "SESSIONBOX_LIFECYCLE_INTERVAL_MS") ?? 15_000,
+    },
     docker: {
       socketPath: env.SESSIONBOX_DOCKER_SOCKET?.trim() || "/var/run/docker.sock",
       networkName: env.SESSIONBOX_DOCKER_NETWORK?.trim() || "sessionbox",

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent, type JSX } from "react";
 import type { Sandbox } from "@sessionbox/protocol";
-import { ApiError, api } from "../api.ts";
+import { ApiError, api, getToken, setToken } from "../api.ts";
 
 export function SandboxList(): JSX.Element {
   const [sandboxes, setSandboxes] = useState<Sandbox[]>([]);
@@ -74,9 +74,18 @@ export function SandboxList(): JSX.Element {
             Sandboxes bound to agent sessions — managed here, executed in isolation.
           </p>
         </div>
-        <button type="button" className="secondary" onClick={() => void refresh()}>
-          Refresh
-        </button>
+        <div className="header-actions">
+          <input
+            type="password"
+            className="token-input"
+            placeholder="API token (if required)"
+            defaultValue={getToken() ?? ""}
+            onChange={(event) => setToken(event.target.value)}
+          />
+          <button type="button" className="secondary" onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
       </header>
 
       <section className="card">

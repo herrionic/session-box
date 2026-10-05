@@ -18,6 +18,25 @@ export class ApiError extends Error {
   }
 }
 
+const TOKEN_STORAGE_KEY = "sessionbox.token";
+
+export function getToken(): string | null {
+  return window.localStorage.getItem(TOKEN_STORAGE_KEY);
+}
+
+export function setToken(token: string | null): void {
+  if (token === null || token.trim() === "") {
+    window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(TOKEN_STORAGE_KEY, token.trim());
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token === null ? {} : { authorization: `Bearer ${token}` };
+}
+
 async function parseError(response: Response): Promise<ApiError> {
   const body: unknown = await response.json().catch(() => undefined);
   const error = (body as ErrorResponse | undefined)?.error;
@@ -26,6 +45,7 @@ async function parseError(response: Response): Promise<ApiError> {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
+    ...authHeaders(),
     ...(init?.headers as Record<string, string> | undefined),
   };
   if (init?.body !== undefined) {
@@ -96,7 +116,7 @@ export const api = {
       `/api/sandboxes/${id}/files/upload?path=${encodeURIComponent(path)}`,
       {
         method: "POST",
-        headers: { "content-type": "application/octet-stream" },
+        headers: { "content-type": "application/octet-stream", ...authHeaders() },
         body: file,
       },
     );
@@ -105,8 +125,14 @@ export const api = {
   },
 
   downloadUrl: (id: string, path: string): string =>
-    `/api/sandboxes/${id}/files/download?path=${encodeURIComponent(path)}`,
+    `/api/sandboxes/${id}/files/download?path=${encodeURIComponent(path)}${tokenQuery()}`,
 
   terminalUrl: (id: string): string =>
-    `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/api/ws/terminal/${id}`,
+    `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/api/ws/terminal/${id}${tokenQuery()}`,
 };
+
+/** WebSocket and download URLs cannot set headers; carry the token in the query. */
+function tokenQuery(): string {
+  const token = getToken();
+  return token === null ? "" : `?token=${encodeURIComponent(token)}`;
+}

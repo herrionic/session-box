@@ -160,7 +160,9 @@ export class SandboxFilesService {
     operation: (session: SshSession) => Promise<T>,
   ): Promise<T> {
     try {
-      return await this.sandboxes.withSshSession(sandboxId, operation);
+      const result = await this.sandboxes.withSshSession(sandboxId, operation);
+      await this.sandboxes.touch(sandboxId);
+      return result;
     } catch (error) {
       throw toPublicSshError(error, this.logger, "file.operation.failed");
     }

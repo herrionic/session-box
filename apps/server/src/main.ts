@@ -1,19 +1,29 @@
+import { AgentGateway } from "./agent/gateway.ts";
 import { loadConfig } from "./config.ts";
 import { parseMasterKey } from "./credentials/master-key.ts";
-import { InMemoryCredentialStore } from "./credentials/store.ts";
-import { AgentGateway } from "./agent/gateway.ts";
+import { EncryptedCredentialStore } from "./credentials/store.ts";
 import { SandboxFilesService } from "./files/service.ts";
 import { buildApp } from "./http/app.ts";
+import { LifecycleService } from "./lifecycle/service.ts";
 import { createLogger } from "./logging.ts";
 import { createRuntime } from "./runtime/index.ts";
-import { InMemorySandboxRepository } from "./sandbox/repository.ts";
 import { SandboxService } from "./sandbox/service.ts";
 import { SshSessionManager } from "./ssh/manager.ts";
 import { Ssh2SessionFactory } from "./ssh/ssh2-session.ts";
+import { openDatabase } from "./storage/database.ts";
+import { SqliteSandboxRepository } from "./storage/sandbox-repository.ts";
+import { SqliteSecretRepository } from "./storage/secret-repository.ts";
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const logger = createLogger(config.logLevel);
+
+  if (config.auth.clients.length === 0) {
+    logger.warn(
+      { event: "server.auth.disabled" },
+      "SESSIONBOX_CLIENTS is not configured; the API is unauthenticated",
+    );
+  }
 
   const masterKey = parseMasterKey(config.masterKey);
   if (masterKey === undefined) {
@@ -23,9 +33,12 @@ async function main(): Promise<void> {
     );
   }
 
+  const database = openDatabase(config.databaseFile);
+  const repository = new SqliteSandboxRepository(database);
+  const secrets = new SqliteSecretRepository(database);
+  const credentials = new EncryptedCredentialStore(masterKey, secrets);
+
   const runtime = createRuntime(config, logger);
-  const repository = new InMemorySandboxRepository();
-  const credentials = new InMemoryCredentialStore(masterKey);
   const ssh = new Ssh2SessionFactory({ runtime, credentials, logger });
   const sessions = new SshSessionManager(ssh, logger);
   const service = new SandboxService({
@@ -59,11 +72,20 @@ async function main(): Promise<void> {
     );
   }
 
+  const lifecycle = new LifecycleService({
+    sandboxes: service,
+    logger,
+    intervalMs: config.lifecycle.intervalMs,
+  });
+  lifecycle.start();
+
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ event: "server.shutdown", signal }, "shutting down");
     try {
+      lifecycle.stop();
       await service.close();
       await app.close();
+      database.close();
     } finally {
       process.exit(0);
     }
@@ -72,7 +94,10 @@ async function main(): Promise<void> {
   process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
   await app.listen({ host: config.host, port: config.port });
-  logger.info({ event: "server.started", host: config.host, port: config.port }, "sessionbox server listening");
+  logger.info(
+    { event: "server.started", host: config.host, port: config.port, database: config.databaseFile },
+    "sessionbox server listening",
+  );
 }
 
 await main().catch((error: unknown) => {

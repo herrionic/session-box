@@ -10,7 +10,7 @@ import { newSandboxId, nowIso } from "@sessionbox/shared";
 import type { CredentialStore } from "../credentials/store.ts";
 import { SessionBoxError } from "../errors.ts";
 import type { Logger } from "../logging.ts";
-import { RuntimeNotFoundError, type SandboxRuntime } from "../runtime/types.ts";
+import { RuntimeNotFoundError, type RuntimeSandbox, type SandboxRuntime } from "../runtime/types.ts";
 import { generateSshKeyPair, SSH_PRIVATE_KEY_CREDENTIAL } from "../ssh/keypair.ts";
 import type { SshSessionManager } from "../ssh/manager.ts";
 import { waitForSsh } from "../ssh/readiness.ts";
@@ -33,6 +33,8 @@ export interface SandboxServiceOptions {
   sshRetryIntervalMs?: number;
   /** Injectable for tests. */
   sleep?: (ms: number) => Promise<void>;
+  /** Clock used for record timestamps; injectable for tests. */
+  now?: () => number;
 }
 
 /**
@@ -51,6 +53,7 @@ export class SandboxService {
   private readonly sshReadyTimeoutMs: number;
   private readonly sshRetryIntervalMs: number;
   private readonly sleep: ((ms: number) => Promise<void>) | undefined;
+  private readonly now: () => number;
   /** Per-sandbox operation chains: serializes concurrent state changes. */
   private readonly chains = new Map<string, Promise<unknown>>();
 
@@ -66,6 +69,7 @@ export class SandboxService {
     this.sshReadyTimeoutMs = options.sshReadyTimeoutMs ?? 30_000;
     this.sshRetryIntervalMs = options.sshRetryIntervalMs ?? 500;
     this.sleep = options.sleep;
+    this.now = options.now ?? Date.now;
   }
 
   async create(request: CreateSandboxRequest): Promise<SandboxRecord> {
@@ -79,7 +83,7 @@ export class SandboxService {
       workspace: this.workspace,
       resources: request.resources ?? {},
       lifecycle: resolveLifecyclePolicy(request.lifecycle),
-      createdAt: nowIso(),
+      createdAt: nowIso(this.now()),
       activeConnections: 0,
     };
 
@@ -116,7 +120,7 @@ export class SandboxService {
       });
 
       record.status = "running";
-      record.startedAt = nowIso();
+      record.startedAt = nowIso(this.now());
       await this.repository.save(record);
 
       this.logger.info({ event: "sandbox.created", sandboxId: id }, "sandbox created");
@@ -160,7 +164,7 @@ export class SandboxService {
       }
 
       record.status = "running";
-      record.startedAt = nowIso();
+      record.startedAt = nowIso(this.now());
       record.stoppedAt = undefined;
       await this.repository.save(record);
       await this.sessions.release(id);
@@ -183,7 +187,7 @@ export class SandboxService {
       }
 
       record.status = "stopped";
-      record.stoppedAt = nowIso();
+      record.stoppedAt = nowIso(this.now());
       await this.repository.save(record);
       await this.sessions.release(id);
 
@@ -205,7 +209,7 @@ export class SandboxService {
       }
 
       record.status = "running";
-      record.startedAt = nowIso();
+      record.startedAt = nowIso(this.now());
       record.stoppedAt = undefined;
       await this.repository.save(record);
       await this.sessions.release(id);
@@ -305,6 +309,34 @@ export class SandboxService {
     await this.sessions.releaseAll();
   }
 
+  /** Records activity for idle detection (best effort). */
+  async touch(id: string): Promise<void> {
+    const record = await this.repository.get(id);
+    if (record === undefined) return;
+
+    record.lastActivityAt = nowIso(this.now());
+    await this.repository.save(record);
+  }
+
+  /** Marks one more live connection (agent socket, web terminal). */
+  async acquire(id: string): Promise<void> {
+    const record = await this.repository.get(id);
+    if (record === undefined) return;
+
+    record.activeConnections += 1;
+    record.lastActivityAt = nowIso(this.now());
+    await this.repository.save(record);
+  }
+
+  async release(id: string): Promise<void> {
+    const record = await this.repository.get(id);
+    if (record === undefined) return;
+
+    record.activeConnections = Math.max(0, record.activeConnections - 1);
+    record.lastActivityAt = nowIso(this.now());
+    await this.repository.save(record);
+  }
+
   /**
    * Reconciles persisted state with the runtime after a server restart
    * (PROJECT.md §33). Containers that disappeared are marked `failed`;
@@ -312,9 +344,18 @@ export class SandboxService {
    */
   async reconcile(): Promise<void> {
     const records = await this.repository.list();
-    if (records.length === 0) return;
-
+    // The runtime must always be listed: it is also the adoption source for
+    // managed containers that lost their record.
     const runtimeSandboxes = await this.runtime.list();
+
+    // No connection survives a restart; stale counters would block auto-stop.
+    for (const record of records) {
+      if (record.activeConnections !== 0) {
+        record.activeConnections = 0;
+        await this.repository.save(record);
+      }
+    }
+
     const bySandboxId = new Map(
       runtimeSandboxes
         .filter((sandbox) => sandbox.sandboxId !== undefined)
@@ -349,6 +390,45 @@ export class SandboxService {
           "sandbox status reconciled from the runtime",
         );
       }
+    }
+
+    await this.adoptOrphans(records, runtimeSandboxes);
+  }
+
+  /**
+   * Managed runtime objects without a record (lost database) are adopted so
+   * they stay manageable. Their SSH credentials are gone with the database,
+   * so agent connections to adopted sandboxes fail until they are recreated.
+   */
+  private async adoptOrphans(
+    records: SandboxRecord[],
+    runtimeSandboxes: RuntimeSandbox[],
+  ): Promise<void> {
+    const known = new Set(records.map((record) => record.id));
+
+    for (const sandbox of runtimeSandboxes) {
+      const sandboxId = sandbox.sandboxId;
+      if (sandboxId === undefined || known.has(sandboxId)) continue;
+
+      const record: SandboxRecord = {
+        id: sandboxId,
+        name: sandbox.name ?? sandboxId,
+        image: sandbox.image ?? this.baseImage,
+        runtime: this.runtime.runtimeId,
+        status: sandbox.status === "running" ? "running" : "stopped",
+        workspace: this.workspace,
+        resources: {},
+        lifecycle: { autoStop: false, deleteAfterStop: false },
+        createdAt: sandbox.createdAt ?? nowIso(this.now()),
+        activeConnections: 0,
+        runtimeRef: sandbox.ref,
+      };
+
+      await this.repository.save(record);
+      this.logger.warn(
+        { event: "sandbox.reconcile.adopted", sandboxId, runtimeRef: sandbox.ref },
+        "adopted a managed container that had no persisted record",
+      );
     }
   }
 

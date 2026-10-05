@@ -110,12 +110,17 @@ removes the credential entry.
 
 ## 6. Persistence and recovery
 
-- `SandboxRepository` is the persistence boundary; the MVP boots with an
-  in-memory implementation and swaps in SQLite (Day 6).
-- Records persist `runtime` and the opaque `runtime_ref`, never
-  Docker-specific column names.
-- Managed containers carry Docker labels, so reconciliation after a restart
-  can map runtime state back to sandbox records (`SandboxService.reconcile`).
+- SQLite via Node's built-in `node:sqlite` (no native build): `sandboxes`
+  records and a `secrets` table holding AES-256-GCM sealed blobs; the schema
+  version lives in `meta` and migrations are monotonic.
+- Records persist `runtime` and the opaque `runtime_ref`, never Docker-specific
+  column names.
+- On startup `SandboxService.reconcile()`:
+  1. resets stale connection counters (no connection survives a restart),
+  2. syncs statuses with the runtime and marks vanished containers `failed`,
+  3. **adopts** managed containers that have no record (Docker labels), so a
+     lost database does not orphan sandboxes. Adopted sandboxes are manageable
+     but not connectable: their SSH keys were lost with the database.
 
 ## 7. Security posture (MVP)
 
@@ -124,6 +129,14 @@ removes the credential entry.
   no published ports, dedicated bridge network.
 - Per-sandbox SSH credentials: ephemeral ed25519 keypair, private key sealed
   with AES-256-GCM, never returned through the API.
+- API authentication: bearer tokens from `SESSIONBOX_CLIENTS` with coarse
+  permissions (`sandbox:create/read/execute/write/delete/admin`), enforced on
+  REST and both WebSocket surfaces. Browser sockets pass the token as a query
+  parameter and the logger redacts it. Without configured clients the API is
+  open (development default) and a warning is logged at startup.
+- Lifecycle: auto-stop on idle timeout / maximum lifetime with
+  delete-after-stop; live agent or terminal connections always keep a sandbox
+  alive. Enforced by SessionBox, never by a plugin.
 - The server container: trusted management plane, holds the Docker socket
   (host-root-equivalent). This is documented in ADR-0002.
 - Docker isolation is a development/agent-environment boundary, **not** a

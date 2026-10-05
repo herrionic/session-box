@@ -4,6 +4,7 @@ import {
   type TerminalServerMessage,
 } from "@sessionbox/protocol";
 import type { WebSocket } from "ws";
+import { PERMISSIONS, requirePermission, type Principal } from "../../auth/principals.ts";
 import { SessionBoxError, isSessionBoxError } from "../../errors.ts";
 import type { SandboxService } from "../../sandbox/service.ts";
 import type { SessionBoxApp } from "../types.ts";
@@ -29,7 +30,7 @@ export function registerTerminalRoutes(
 
 async function handleTerminal(
   socket: WebSocket,
-  request: { params: unknown; query: unknown; log: import("fastify").FastifyBaseLogger },
+  request: { params: unknown; query: unknown; log: import("fastify").FastifyBaseLogger; principal?: Principal },
   service: SandboxService,
 ): Promise<void> {
   const send = (message: TerminalServerMessage): void => {
@@ -39,6 +40,7 @@ async function handleTerminal(
   };
 
   try {
+    requirePermission(request.principal, PERMISSIONS.execute);
     const { sandboxId } = ParamsSchema.parse(request.params);
     const query = QuerySchema.parse(request.query ?? {});
 
@@ -59,6 +61,7 @@ async function handleTerminal(
       },
     });
 
+    await service.acquire(sandboxId);
     send({ type: "ready", sandboxId });
     request.log.info({ event: "terminal.opened", sandboxId }, "terminal opened");
 
@@ -67,6 +70,7 @@ async function handleTerminal(
         const message = TerminalClientMessageSchema.parse(JSON.parse(String(raw)));
         if (message.type === "input") {
           shell.write(message.data);
+          void service.touch(sandboxId);
         } else {
           shell.resize(message.cols, message.rows);
         }
@@ -81,6 +85,7 @@ async function handleTerminal(
 
     const closeShell = (): void => {
       shell.close();
+      void service.release(sandboxId);
       request.log.info({ event: "terminal.closed", sandboxId }, "terminal closed");
     };
     socket.on("close", closeShell);

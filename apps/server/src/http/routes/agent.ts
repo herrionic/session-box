@@ -2,13 +2,16 @@ import {
   AGENT_PROTOCOL_VERSION,
   AgentHelloSchema,
   AgentRequestSchema,
+  type AgentRequest,
   type AgentResponse,
   type SessionBoxErrorCode,
 } from "@sessionbox/protocol";
 import type { FastifyBaseLogger } from "fastify";
 import type { WebSocket } from "ws";
 import type { AgentGateway } from "../../agent/gateway.ts";
+import { PERMISSIONS, requirePermission } from "../../auth/principals.ts";
 import { isSessionBoxError } from "../../errors.ts";
+import type { SandboxService } from "../../sandbox/service.ts";
 import type { SessionBoxApp } from "../types.ts";
 
 const HANDSHAKE_TIMEOUT_MS = 10_000;
@@ -20,17 +23,23 @@ type AgentServerMessage = AgentResponse | { type: "welcome"; protocolVersion: nu
  * dispatched through the agent gateway. A disconnect only ends temporary
  * access — it never stops or deletes the sandbox (PROJECT.md §39).
  */
-export function registerAgentRoutes(app: SessionBoxApp, deps: { gateway: AgentGateway }): void {
+export function registerAgentRoutes(
+  app: SessionBoxApp,
+  deps: { gateway: AgentGateway; service: SandboxService },
+): void {
   app.get("/api/ws/agent", { websocket: true }, (socket, request) => {
-    handleAgent(socket, request, deps.gateway);
+    handleAgent(socket, request, deps);
   });
 }
 
 function handleAgent(
   socket: WebSocket,
-  request: { log: FastifyBaseLogger },
-  gateway: AgentGateway,
+  request: { log: FastifyBaseLogger; principal?: { id: string; permissions: string[]; type: "plugin" | "user" } },
+  deps: { gateway: AgentGateway; service: SandboxService },
 ): void {
+  const trackedSandboxes = new Set<string>();
+  const gateway = deps.gateway;
+  const service = deps.service;
   const send = (message: AgentServerMessage): void => {
     if (socket.readyState === socket.OPEN) {
       socket.send(JSON.stringify(message));
@@ -98,6 +107,14 @@ function handleAgent(
 
       const agentRequest = parsedRequest.data;
       try {
+        requirePermission(request.principal, permissionFor(agentRequest.type));
+
+        if (!trackedSandboxes.has(agentRequest.sandboxId)) {
+          trackedSandboxes.add(agentRequest.sandboxId);
+          await service.acquire(agentRequest.sandboxId);
+        }
+        await service.touch(agentRequest.sandboxId);
+
         send(await gateway.handle(agentRequest));
       } catch (error) {
         if (isSessionBoxError(error)) {
@@ -123,9 +140,20 @@ function handleAgent(
   };
   socket.on("close", () => {
     cleanup();
+    for (const sandboxId of trackedSandboxes) {
+      void service.release(sandboxId);
+    }
     request.log.info({ event: "agent.disconnected" }, "agent disconnected");
   });
   socket.on("error", cleanup);
+}
+
+function permissionFor(type: AgentRequest["type"]): string {
+  if (type === "exec") return PERMISSIONS.execute;
+  if (type === "file.write" || type === "file.mkdir" || type === "file.remove") {
+    return PERMISSIONS.write;
+  }
+  return PERMISSIONS.read;
 }
 
 function extractRequestId(parsed: unknown): string | undefined {

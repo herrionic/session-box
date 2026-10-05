@@ -28,6 +28,10 @@ export interface RuntimeSandbox {
   sandboxId?: string;
   status: RuntimeSandboxStatus;
   startedAt?: string;
+  /** Metadata used when reconciling (adopting containers that lost their record). */
+  name?: string;
+  image?: string;
+  createdAt?: string;
 }
 
 export interface SandboxRuntime {

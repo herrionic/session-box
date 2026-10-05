@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { join } from "node:path";
 import { loadConfig } from "../src/config.ts";
 
 describe("loadConfig", () => {
   it("applies defaults for the container deployment", () => {
     const config = loadConfig({});
-    expect(config).toEqual({
+
+    expect(config).toMatchObject({
       host: "0.0.0.0",
       port: 8787,
       runtime: "docker",
@@ -16,7 +18,28 @@ describe("loadConfig", () => {
         baseImage: "sessionbox/base:latest",
         workspace: "/workspace",
       },
+      auth: { clients: [] },
+      lifecycle: { intervalMs: 15_000 },
     });
+    expect(config.databaseFile).toBe(join("./data", "sessionbox.db"));
+  });
+
+  it("parses configured clients", () => {
+    const config = loadConfig({
+      SESSIONBOX_CLIENTS: JSON.stringify([
+        { id: "dsh", token: "dsh-token", permissions: ["sandbox:read"] },
+      ]),
+    });
+
+    expect(config.auth.clients).toEqual([
+      { id: "dsh", token: "dsh-token", permissions: ["sandbox:read"] },
+    ]);
+  });
+
+  it("rejects malformed client configuration", () => {
+    expect(() => loadConfig({ SESSIONBOX_CLIENTS: "not json" })).toThrow(/valid JSON/);
+    expect(() => loadConfig({ SESSIONBOX_CLIENTS: "{}" })).toThrow(/must be a JSON array/);
+    expect(() => loadConfig({ SESSIONBOX_CLIENTS: '[{"id":"x"}]' })).toThrow(/token/);
   });
 
   it("reads overrides from the environment", () => {

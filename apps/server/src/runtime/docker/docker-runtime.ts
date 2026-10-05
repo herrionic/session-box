@@ -9,6 +9,7 @@ import { SERVER_VERSION } from "../../version.ts";
 
 const MANAGED_LABEL = "sessionbox.managed";
 const SANDBOX_ID_LABEL = "sessionbox.sandbox-id";
+const SANDBOX_NAME_LABEL = "sessionbox.name";
 const VERSION_LABEL = "sessionbox.version";
 const DEFAULT_PIDS_LIMIT = 512;
 
@@ -105,6 +106,7 @@ export class DockerRuntime implements SandboxRuntime {
         Labels: {
           [MANAGED_LABEL]: "true",
           [SANDBOX_ID_LABEL]: spec.sandboxId,
+          [SANDBOX_NAME_LABEL]: spec.name,
           [VERSION_LABEL]: SERVER_VERSION,
         },
         HostConfig: {
@@ -191,6 +193,9 @@ export class DockerRuntime implements SandboxRuntime {
       return containers.map((container) => ({
         ref: container.Id,
         sandboxId: container.Labels?.[SANDBOX_ID_LABEL],
+        name: container.Labels?.[SANDBOX_NAME_LABEL] ?? stripContainerPrefix(container.Names?.[0]),
+        image: container.Image,
+        createdAt: new Date(container.Created * 1000).toISOString(),
         status: container.State === "running" ? "running" : "stopped",
       }));
     } catch (error) {
@@ -344,13 +349,23 @@ function toRuntimeSandbox(info: Docker.ContainerInspectInfo): RuntimeSandbox {
   const startedAtRaw = info.State?.StartedAt;
   const startedAt =
     startedAtRaw && !startedAtRaw.startsWith("0001-") ? startedAtRaw : undefined;
+  const createdAtRaw = info.Created;
+  const createdAt = createdAtRaw ? new Date(createdAtRaw).toISOString() : undefined;
 
   return {
     ref: info.Id,
     sandboxId: info.Config?.Labels?.[SANDBOX_ID_LABEL],
+    name: info.Config?.Labels?.[SANDBOX_NAME_LABEL] ?? stripContainerPrefix(info.Name),
+    image: info.Config?.Image,
     status: info.State?.Running ? "running" : "stopped",
     ...(startedAt ? { startedAt } : {}),
+    ...(createdAt ? { createdAt } : {}),
   };
+}
+
+function stripContainerPrefix(name: string | undefined): string | undefined {
+  if (name === undefined) return undefined;
+  return name.replace(/^\/+/, "").replace(/^sessionbox-/, "");
 }
 
 function dockerStatusCode(error: unknown): number | undefined {

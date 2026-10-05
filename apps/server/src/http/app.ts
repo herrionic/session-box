@@ -12,6 +12,7 @@ import type { SandboxFilesService } from "../files/service.ts";
 import type { Logger } from "../logging.ts";
 import type { SandboxRuntime } from "../runtime/types.ts";
 import type { SandboxService } from "../sandbox/service.ts";
+import { createAuthHook } from "./auth.ts";
 import { registerAgentRoutes } from "./routes/agent.ts";
 import { registerFileRoutes } from "./routes/files.ts";
 import { registerHealthRoutes } from "./routes/health.ts";
@@ -95,11 +96,14 @@ export async function buildApp(deps: AppDependencies): Promise<SessionBoxApp> {
   // WebSocket support must be registered before the websocket routes.
   await app.register(websocket);
 
+  // Bearer authentication runs before every route (health stays open).
+  app.addHook("onRequest", createAuthHook(deps.config.auth));
+
   registerHealthRoutes(app, { config: deps.config, runtime: deps.runtime });
   registerSandboxRoutes(app, { service: deps.service });
   registerFileRoutes(app, { files: deps.files });
   registerTerminalRoutes(app, { service: deps.service });
-  registerAgentRoutes(app, { gateway: deps.gateway });
+  registerAgentRoutes(app, { gateway: deps.gateway, service: deps.service });
 
   // JSON bodies may legitimately be absent on body-less POSTs (start/stop);
   // treat an empty body as undefined instead of failing the parse.

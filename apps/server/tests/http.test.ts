@@ -27,6 +27,9 @@ const testConfig: ServerConfig = {
     baseImage: "sessionbox/base:test",
     workspace: "/workspace",
   },
+  databaseFile: ":memory:",
+  auth: { clients: [] },
+  lifecycle: { intervalMs: 1000 },
 };
 
 describe("HTTP API", () => {
