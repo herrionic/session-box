@@ -3,6 +3,7 @@ import {
   SshCancelledError,
   SshError,
   SshNotFoundError,
+  SshPermissionError,
   SshUnavailableError,
   type SshExecOptions,
   type SshExecResult,
@@ -19,6 +20,8 @@ interface FakeNode {
   content: Buffer;
   mode: number;
   modifiedAt: number;
+  /** Fresh inode per creation (a write replaces the inode, like temp+rename). */
+  ino: number;
   target?: string;
 }
 
@@ -90,15 +93,22 @@ export class FakeSshSession implements SshSession {
   readonly pendingExecs: PendingExec[] = [];
   /** When true, exec calls are held until the test resolves or aborts them. */
   holdExecs = false;
+  /** Paths whose content reads fail (unreadable-file regression tests). */
+  readonly failReadsFor = new Set<string>();
   execResults: SshExecResult[] = [];
   closed = false;
   private lastModifiedAt = 0;
+  private nextIno = 1000;
 
   /** Monotonic mtime so consecutive writes always change the version. */
   private now(): number {
     const value = Date.now();
     this.lastModifiedAt = value > this.lastModifiedAt ? value : this.lastModifiedAt + 1;
     return this.lastModifiedAt;
+  }
+
+  private makeNode(node: Omit<FakeNode, "ino">): FakeNode {
+    return { ...node, ino: this.nextIno++ };
   }
 
   constructor() {
@@ -111,25 +121,25 @@ export class FakeSshSession implements SshSession {
   ensureDirectory(path: string): void {
     const target = normalize(path);
     this.ensureParent(target);
-    this.nodes.set(target, { type: "directory", content: Buffer.alloc(0), mode: 0o755, modifiedAt: this.now() });
+    this.nodes.set(target, this.makeNode({ type: "directory", content: Buffer.alloc(0), mode: 0o755, modifiedAt: this.now() }));
   }
 
   ensureFile(path: string, content: Buffer | string = ""): void {
     const target = normalize(path);
     this.ensureParent(target);
-    this.nodes.set(target, { type: "file", content: Buffer.from(content), mode: 0o644, modifiedAt: this.now() });
+    this.nodes.set(target, this.makeNode({ type: "file", content: Buffer.from(content), mode: 0o644, modifiedAt: this.now() }));
   }
 
   ensureSymlink(path: string, target: string): void {
     const linkPath = normalize(path);
     this.ensureParent(linkPath);
-    this.nodes.set(linkPath, {
+    this.nodes.set(linkPath, this.makeNode({
       type: "symlink",
       content: Buffer.alloc(0),
       mode: 0o777,
       modifiedAt: this.now(),
       target: normalize(target),
-    });
+    }));
   }
 
   async exec(command: string, options: SshExecOptions = {}): Promise<SshExecResult> {
@@ -152,10 +162,16 @@ export class FakeSshSession implements SshSession {
   }
 
   async readFile(path: string): Promise<Buffer> {
+    if (this.failReadsFor.has(normalize(path))) {
+      throw new SshPermissionError(`permission denied: ${path}`);
+    }
     return this.requireFile(path).content;
   }
 
   async readFileRange(path: string, offset: number, length: number): Promise<Buffer> {
+    if (this.failReadsFor.has(normalize(path))) {
+      throw new SshPermissionError(`permission denied: ${path}`);
+    }
     return this.requireFile(path).content.subarray(offset, offset + length);
   }
 
@@ -208,7 +224,7 @@ export class FakeSshSession implements SshSession {
         current = posix.join(current, segment);
         const existing = this.nodes.get(current);
         if (existing === undefined) {
-          this.nodes.set(current, { type: "directory", content: Buffer.alloc(0), mode: 0o755, modifiedAt: this.now() });
+          this.nodes.set(current, this.makeNode({ type: "directory", content: Buffer.alloc(0), mode: 0o755, modifiedAt: this.now() }));
         } else if (existing.type !== "directory") {
           throw new SshError(`${current} is not a directory`);
         }
@@ -218,7 +234,7 @@ export class FakeSshSession implements SshSession {
 
     if (this.nodes.has(target)) throw new SshError(`${target} already exists`);
     this.ensureParent(target);
-    this.nodes.set(target, { type: "directory", content: Buffer.alloc(0), mode: 0o755, modifiedAt: this.now() });
+    this.nodes.set(target, this.makeNode({ type: "directory", content: Buffer.alloc(0), mode: 0o755, modifiedAt: this.now() }));
   }
 
   async remove(path: string, options: { recursive?: boolean } = {}): Promise<void> {
@@ -272,13 +288,13 @@ export class FakeSshSession implements SshSession {
     const linkPath = normalize(path);
     this.ensureParent(linkPath);
     if (this.nodes.has(linkPath)) throw new SshError(`${path} already exists`);
-    this.nodes.set(linkPath, {
+    this.nodes.set(linkPath, this.makeNode({
       type: "symlink",
       content: Buffer.alloc(0),
       mode: 0o777,
       modifiedAt: this.now(),
       target: normalize(target),
-    });
+    }));
   }
 
   async openShell(options: SshShellOptions): Promise<SshShell> {
@@ -329,12 +345,12 @@ export class FakeSshSession implements SshSession {
     if (parent === undefined || parent.type !== "directory") {
       throw new SshNotFoundError(`${posix.dirname(path)} was not found`);
     }
-    this.nodes.set(path, {
+    this.nodes.set(path, this.makeNode({
       type: "file",
       content: Buffer.from(content),
       mode: existing?.mode ?? 0o644,
       modifiedAt: this.now(),
-    });
+    }));
   }
 
   private requireNode(path: string): FakeNode {
@@ -374,6 +390,7 @@ function toEntry(path: string, node: FakeNode, linkTarget?: string): SshFileEntr
       : node.type === "symlink"
         ? Buffer.byteLength(node.target ?? "")
         : 0;
+  const nanos = `${node.modifiedAt}000000`;
 
   return {
     name: posix.basename(path),
@@ -382,6 +399,7 @@ function toEntry(path: string, node: FakeNode, linkTarget?: string): SshFileEntr
     size,
     mode: node.mode,
     modifiedAt: node.modifiedAt,
+    version: `${node.ino}:${size}:${nanos}:${nanos}`,
     ...(linkTarget !== undefined ? { linkTarget } : {}),
   };
 }

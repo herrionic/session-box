@@ -6,6 +6,13 @@ import type { Logger } from "../logging.ts";
 import type { ContainerRuntime } from "../runtime/types.ts";
 import { SSH_PRIVATE_KEY_CREDENTIAL } from "./keypair.ts";
 import {
+  buildListCommand,
+  buildStatCommand,
+  parseFindOutput,
+  toSshEntries,
+  toSshEntry,
+} from "./find-entries.ts";
+import {
   DEFAULT_EXEC_TIMEOUT_MS,
   SshCancelledError,
   SshError,
@@ -16,7 +23,6 @@ import {
   type SshExecOptions,
   type SshExecResult,
   type SshFileEntry,
-  type SshFileType,
   type SshSession,
   type SshSessionFactory,
   type SshSessionRequest,
@@ -412,6 +418,24 @@ class Ssh2Session implements SshSession {
     await this.sftpCall<void>("create symlink", path, (done) => sftp.symlink(target, path, done));
   }
 
+  /** Readdir used only to classify a failed `find` call. */
+  private async sftpReaddir(path: string): Promise<Array<{ filename: string; attrs: Stats }>> {
+    const sftp = await this.sftp();
+    return await this.sftpCall<Array<{ filename: string; attrs: Stats }>>(
+      "list directory",
+      path,
+      (done) => sftp.readdir(path, done),
+    );
+  }
+
+  /** Stat used only to classify a failed `find` call. */
+  private async sftpStatOnly(path: string, follow: boolean): Promise<void> {
+    const sftp = await this.sftp();
+    await this.sftpCall<Stats>("stat path", path, (done) =>
+      follow ? sftp.stat(path, done) : sftp.lstat(path, done),
+    );
+  }
+
   /** Resolves symlinks so a write lands on the real file; falls back to the input. */
   private async resolvePath(path: string): Promise<string> {
     const sftp = await this.sftp();
@@ -423,43 +447,27 @@ class Ssh2Session implements SshSession {
   }
 
   async list(path: string): Promise<SshFileEntry[]> {
-    const sftp = await this.sftp();
-    const entries = await this.sftpCall<Array<{ filename: string; attrs: Stats }>>(
-      "list directory",
-      path,
-      (done) => sftp.readdir(path, done),
-    );
+    const result = await this.execRaw(buildListCommand(path), OPERATION_TIMEOUT_MS);
+    const entries = toSshEntries(parseFindOutput(result.stdout), path);
+    if (result.exitCode === 0) return entries;
 
-    const files: SshFileEntry[] = [];
-    for (const entry of entries) {
-      const entryPath = posix.join(path, entry.filename);
-      const file = toFileEntry(entryPath, entry.filename, entry.attrs);
-      if (file.type === "symlink") {
-        const target = await this.sftpCall<string>("read link", entryPath, (done) =>
-          sftp.readlink(entryPath, done),
-        ).catch(() => undefined);
-        if (target !== undefined) file.linkTarget = target;
-      }
-      files.push(file);
-    }
-    return files;
+    // `find` failed: classify through SFTP so NOT_FOUND / permission / "not a
+    // directory" stay typed. A successful empty readdir means an empty dir.
+    const fallback = await this.sftpReaddir(path);
+    if (fallback.length === 0) return [];
+    throw new SshError(`failed to list directory: ${path}`);
   }
 
   async stat(path: string, options: { follow?: boolean } = {}): Promise<SshFileEntry> {
-    const sftp = await this.sftp();
     const follow = options.follow !== false;
-    const stats = await this.sftpCall<Stats>("stat path", path, (done) =>
-      follow ? sftp.stat(path, done) : sftp.lstat(path, done),
-    );
-
-    let linkTarget: string | undefined;
-    if (!follow && stats.isSymbolicLink()) {
-      linkTarget = await this.sftpCall<string>("read link", path, (done) =>
-        sftp.readlink(path, done),
-      );
+    const result = await this.execRaw(buildStatCommand(path, follow), OPERATION_TIMEOUT_MS);
+    const [parsed] = parseFindOutput(result.stdout);
+    if (parsed === undefined) {
+      // Classify the failure (missing path, permission, dangling link, ...).
+      await this.sftpStatOnly(path, follow);
+      throw new SshError(`failed to stat path: ${path}`);
     }
-
-    return toFileEntry(path, posix.basename(path), stats, linkTarget);
+    return toSshEntry(parsed, path);
   }
 
   async mkdir(path: string, options: { recursive?: boolean } = {}): Promise<void> {
@@ -623,28 +631,6 @@ class Ssh2Session implements SshSession {
     }
     return this.sftpPromise;
   }
-}
-
-function toFileEntry(
-  path: string,
-  name: string,
-  stats: Stats,
-  linkTarget?: string,
-): SshFileEntry {
-  let type: SshFileType = "other";
-  if (stats.isDirectory()) type = "directory";
-  else if (stats.isFile()) type = "file";
-  else if (stats.isSymbolicLink()) type = "symlink";
-
-  return {
-    name,
-    path,
-    type,
-    size: stats.size,
-    mode: stats.mode,
-    modifiedAt: stats.mtime * 1000,
-    ...(linkTarget !== undefined ? { linkTarget } : {}),
-  };
 }
 
 function sftpError(action: string, path: string, error: unknown): SshError {

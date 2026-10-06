@@ -12,7 +12,6 @@ import type { Logger } from "../logging.ts";
 import { normalizeContainerPath } from "../ssh/paths.ts";
 import { toPublicSshError } from "../ssh/public-errors.ts";
 import type { SshSession } from "../ssh/session.ts";
-import { md5, toPublicEntry, versionOf } from "../ssh/versions.ts";
 import type { ContainerService } from "../container/service.ts";
 
 export interface ContainerFilesServiceOptions {
@@ -44,10 +43,7 @@ export class ContainerFilesService {
   async list(containerId: string, path: string): Promise<FileListResponse> {
     const target = this.resolve(path);
     return await this.run(containerId, async (session) => {
-      const raw = await session.list(target);
-      const entries = await Promise.all(
-        raw.map(async (entry) => toPublicEntry(entry, await versionOf(session, entry))),
-      );
+      const entries = await session.list(target);
       return { path: target, entries };
     });
   }
@@ -76,7 +72,7 @@ export class ContainerFilesService {
         content: content.toString("utf8"),
         size: entry.size,
         modifiedAt: entry.modifiedAt,
-        version: md5(content),
+        version: entry.version,
         offset: 0,
         length: content.length,
         eof: true,
@@ -102,7 +98,7 @@ export class ContainerFilesService {
         content: request.content,
         size: entry.size,
         modifiedAt: entry.modifiedAt,
-        version: md5(request.content),
+        version: entry.version,
         offset: 0,
         length: bytes,
         eof: true,
@@ -119,7 +115,7 @@ export class ContainerFilesService {
         await session.writeFileAtomic(target, "");
       }
       const entry = await session.stat(target);
-      return toPublicEntry(entry, await versionOf(session, entry));
+      return entry;
     });
   }
 
@@ -142,7 +138,7 @@ export class ContainerFilesService {
     const target = this.resolve(path);
     return await this.run(containerId, async (session) => {
       await session.writeFileAtomic(target, content);
-      return toPublicEntry(await session.stat(target), md5(content));
+      return await session.stat(target);
     });
   }
 
@@ -162,7 +158,7 @@ export class ContainerFilesService {
       }
       const content = await session.readFile(target);
       return {
-        entry: toPublicEntry(entry, md5(content)),
+        entry,
         content,
       };
     });

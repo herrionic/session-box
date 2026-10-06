@@ -67,7 +67,7 @@ Every request carries `requestId` (client-chosen, echoed back) and
 { "type": "exec.cancel",   "requestId": "r1c", "containerId": "ctr_...", "targetRequestId": "r1" }
 { "type": "file.read",     "requestId": "r2", "containerId": "ctr_...", "path": "/workspace/a.txt", "offset": 0, "length": 65536 }
 { "type": "file.readBytes","requestId": "r2b", "containerId": "ctr_...", "path": "/workspace/a.bin", "maxBytes": 8388608 }
-{ "type": "file.write",    "requestId": "r3", "containerId": "ctr_...", "path": "/workspace/a.txt", "content": "hi", "expected": { "version": "49f68a5c8493ec2c0bf489821c21fc3b" } }
+{ "type": "file.write",    "requestId": "r3", "containerId": "ctr_...", "path": "/workspace/a.txt", "content": "hi", "expected": { "version": "1001:2:1791255099795508182:1791255099800000000" } }
 { "type": "file.rename",   "requestId": "r3b", "containerId": "ctr_...", "from": "/workspace/a.txt", "to": "/workspace/b.txt", "overwrite": false }
 { "type": "file.chmod",    "requestId": "r3c", "containerId": "ctr_...", "path": "/workspace/a.txt", "mode": 420 }
 { "type": "file.symlink",  "requestId": "r3d", "containerId": "ctr_...", "path": "/workspace/link", "target": "/workspace/a.txt" }
@@ -96,9 +96,9 @@ read/write/stat, preserving their native semantics.
 { "type": "exec.stdout",       "requestId": "r1", "data": "..." }        // preview while running
 { "type": "exec.stderr",       "requestId": "r1", "data": "..." }        // preview while running
 { "type": "exec.cancel.result","requestId": "r1c", "targetRequestId": "r1" }
-{ "type": "file.read.result",  "requestId": "r2", "file": { "path": "...", "content": "hi", "size": 2, "modifiedAt": 0, "version": "49f68a5c8493ec2c0bf489821c21fc3b", "offset": 0, "length": 2, "eof": true } }
-{ "type": "file.readBytes.result", "requestId": "r2b", "file": { "path": "...", "contentBase64": "AAEC", "size": 3, "modifiedAt": 0, "version": "900150983cd24fb0d6963f7d28e17f72" } }
-{ "type": "file.write.result", "requestId": "r3", "file": { "path": "...", "size": 2, "modifiedAt": 0, "version": "49f68a5c8493ec2c0bf489821c21fc3b" } }
+{ "type": "file.read.result",  "requestId": "r2", "file": { "path": "...", "content": "hi", "size": 2, "modifiedAt": 0, "version": "1001:2:1791255099795508182:1791255099800000000", "offset": 0, "length": 2, "eof": true } }
+{ "type": "file.readBytes.result", "requestId": "r2b", "file": { "path": "...", "contentBase64": "AAEC", "size": 3, "modifiedAt": 0, "version": "1002:3:1791255099000000000:1791255099000000000" } }
+{ "type": "file.write.result", "requestId": "r3", "file": { "path": "...", "size": 2, "modifiedAt": 0, "version": "1003:2:1791255100000000000:1791255100000000000" } }
 { "type": "file.rename.result","requestId": "r3b", "from": "...", "to": "..." }
 { "type": "file.chmod.result", "requestId": "r3c", "path": "...", "mode": 420 }
 { "type": "file.symlink.result","requestId": "r3d", "path": "...", "target": "..." }
@@ -124,11 +124,13 @@ linkTarget? }`.
   valid UTF-8 or contains NUL bytes fails with `FS_NOT_TEXT` (never silently
   mangled). `file.readBytes` returns base64 for binary content; its optional
   `maxBytes` rejects larger files early (`FS_TOO_LARGE`).
-- **Versions**: `version` is the MD5 of the resource itself — file content,
-  symlink target, or a stat descriptor for directories and special files — so
-  every surface (read, write, stat, list) reports the same value for the same
-  state. MD5 is chosen for speed because listing recomputes versions; files
-  are read to hash them, so very large files make listing slower.
+- **Versions**: `version` is `<ino>:<size>:<mtimeNs>:<ctimeNs>` from container
+  metadata (`find -printf`), never from file content — so listing and stat
+  need no read permission, and a directory listing costs one metadata call.
+  Every surface (read, write, stat, list) reports the same value. `ctime`
+  catches mtime-preserving rewrites (`touch -r`) and a fresh inode (atomic
+  replace) always changes it. The container needs GNU `find` (the base image
+  ships it).
 - **Atomic writes**: `file.write` writes a same-directory temp file and
   renames it over the target. With `expected`, a mismatch fails with
   `VERSION_CONFLICT` and `details.current` (the observed version, or `null`

@@ -5,8 +5,7 @@ import type { Logger } from "../logging.ts";
 import type { ContainerService } from "../container/service.ts";
 import { normalizeContainerPath } from "../ssh/paths.ts";
 import { toPublicSshError } from "../ssh/public-errors.ts";
-import { SshNotFoundError, type SshFileEntry, type SshSession } from "../ssh/session.ts";
-import { md5, toPublicEntry, versionOf } from "../ssh/versions.ts";
+import { SshNotFoundError, type SshFileEntry } from "../ssh/session.ts";
 
 /** Largest file the agent protocol will move in one message. */
 const MAX_TRANSFER_BYTES = 8 * 1024 * 1024;
@@ -147,18 +146,11 @@ export class AgentGateway {
         if (entry.size > MAX_TRANSFER_BYTES) throw tooLarge();
         const content = await session.readFile(path);
         if (!isTextChunk(content, true)) throw notText();
-        return contentResult(path, entry, content, 0, true, md5(content));
+        return contentResult(path, entry, content, 0, true, entry.version);
       }
 
       if (requestedOffset >= entry.size) {
-        return contentResult(
-          path,
-          entry,
-          Buffer.alloc(0),
-          requestedOffset,
-          true,
-          await versionOf(session, entry),
-        );
+        return contentResult(path, entry, Buffer.alloc(0), requestedOffset, true, entry.version);
       }
 
       const maxLength = requestedLength ?? entry.size - requestedOffset;
@@ -166,8 +158,7 @@ export class AgentGateway {
       const content = await session.readFileRange(path, requestedOffset, effective);
       const eof = requestedOffset + content.length >= entry.size;
       if (!isTextChunk(content, requestedOffset === 0 && eof)) throw notText();
-      // A range is only part of the file; the version is the whole-file hash.
-      return contentResult(path, entry, content, requestedOffset, eof, await versionOf(session, entry));
+      return contentResult(path, entry, content, requestedOffset, eof, entry.version);
     });
 
     return { requestId: request.requestId, type: "file.read.result", file };
@@ -190,7 +181,7 @@ export class AgentGateway {
         contentBase64: content.toString("base64"),
         size: entry.size,
         modifiedAt: entry.modifiedAt,
-        version: md5(content),
+        version: entry.version,
       };
     });
 
@@ -203,14 +194,17 @@ export class AgentGateway {
     const path = normalizeContainerPath(request.path);
     const bytes = Buffer.byteLength(request.content, "utf8");
     if (bytes > MAX_TRANSFER_BYTES) throw tooLarge("content");
-    const contentBytes = Buffer.from(request.content, "utf8");
 
     const file = await this.containers.withSshSession(request.containerId, async (session) => {
       if (request.expected !== undefined) {
-        const current = await currentVersion(session, path);
-        if (current !== request.expected.version) {
+        const current = await session.stat(path).catch((error: unknown) => {
+          if (error instanceof SshNotFoundError) return undefined;
+          throw error;
+        });
+        const currentVersion = current === undefined ? null : current.version;
+        if (currentVersion !== request.expected.version) {
           throw new SessionBoxError("VERSION_CONFLICT", "the file changed since it was observed", {
-            details: { current },
+            details: { current: currentVersion },
           });
         }
       }
@@ -221,7 +215,7 @@ export class AgentGateway {
         path,
         size: entry.size,
         modifiedAt: entry.modifiedAt,
-        version: md5(contentBytes),
+        version: entry.version,
       };
     });
 
@@ -278,12 +272,7 @@ export class AgentGateway {
 
     const entries: FileEntry[] = await this.containers.withSshSession(
       request.containerId,
-      async (session) => {
-        const raw = await session.list(path);
-        return await Promise.all(
-          raw.map(async (entry) => toPublicEntry(entry, await versionOf(session, entry))),
-        );
-      },
+      (session) => session.list(path),
     );
 
     return { requestId: request.requestId, type: "file.list.result", path, entries };
@@ -294,10 +283,9 @@ export class AgentGateway {
   ): Promise<AgentResponse> {
     const path = normalizeContainerPath(request.path);
 
-    const entry = await this.containers.withSshSession(request.containerId, async (session) => {
-      const raw = await session.stat(path, request.follow === false ? { follow: false } : {});
-      return toPublicEntry(raw, await versionOf(session, raw));
-    });
+    const entry = await this.containers.withSshSession(request.containerId, (session) =>
+      session.stat(path, request.follow === false ? { follow: false } : {}),
+    );
 
     return { requestId: request.requestId, type: "file.stat.result", entry };
   }
@@ -363,19 +351,6 @@ function contentResult(
     length: content.length,
     eof,
   };
-}
-
-/**
- * Current version of `path` (the same MD5 every surface reports), or `null`
- * when the path does not exist.
- */
-async function currentVersion(session: SshSession, path: string): Promise<string | null> {
-  const entry = await session.stat(path).catch((error: unknown) => {
-    if (error instanceof SshNotFoundError) return undefined;
-    throw error;
-  });
-  if (entry === undefined) return null;
-  return await versionOf(session, entry);
 }
 
 /**

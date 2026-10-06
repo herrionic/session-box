@@ -12,9 +12,10 @@ export const FileEntrySchema = z.strictObject({
   /** Epoch milliseconds. */
   modifiedAt: z.number().int().nonnegative(),
   /**
-   * Opaque version for optimistic concurrency: `<mtimeMs>:<size>`. SFTP
-   * reports seconds, so a same-second rewrite with an unchanged size may not
-   * change the version (documented limitation).
+   * Opaque optimistic-concurrency version:
+   * `<ino>:<size>:<mtimeNs>:<ctimeNs>`, from container metadata only (never
+   * file content), so every surface reports the same value without needing
+   * read permission.
    */
   version: z.string().min(1),
   /** Symlink target; present only when the entry was observed without following. */

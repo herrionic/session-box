@@ -455,6 +455,34 @@ describe("agent protocol (simulated harness sessions)", () => {
     await runtime.close();
   });
 
+  it("lists and stats entries whose content cannot be read", async () => {
+    const { app, client, ssh } = await createFixture();
+    cleanups.push(() => app.close());
+
+    const container = await client.createContainer({});
+    const runtime = await client.connect(container.id);
+    const fake = ssh.sessionFor(container.id);
+    fake.ensureFile("/workspace/root-owned.conf", "secret");
+    fake.failReadsFor.add("/workspace/root-owned.conf");
+
+    // Listing and stat are metadata-only: an unreadable file never blocks them.
+    const listing = await runtime.listFiles("/workspace");
+    const listed = listing.entries.find((entry) => entry.name === "root-owned.conf");
+    expect(listed).toMatchObject({ type: "file", size: 6 });
+    expect(listed?.version).toBeTruthy();
+
+    const stat = await runtime.statFile("/workspace/root-owned.conf");
+    expect(stat).toMatchObject({ type: "file", size: 6 });
+    expect(stat.version).toBe(listed?.version);
+
+    // Reading the content still fails with the typed permission error.
+    await expect(runtime.readFile("/workspace/root-owned.conf")).rejects.toMatchObject({
+      code: "FS_PERMISSION_DENIED",
+    });
+
+    await runtime.close();
+  });
+
   it("supports lstat semantics and symlink targets", async () => {
     const { app, client, ssh } = await createFixture();
     cleanups.push(() => app.close());
