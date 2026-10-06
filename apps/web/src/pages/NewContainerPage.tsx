@@ -2,10 +2,12 @@ import { useEffect, useState, type FormEvent, type JSX } from "react";
 import type { CreateContainerRequest, Network } from "@sessionbox/protocol";
 import { api } from "../api.ts";
 import { Alert, Button, Card, Field, INPUT_CLASS } from "../components/ui.tsx";
+import { useI18n } from "../i18n.tsx";
 import { describeError } from "../lib/errors.ts";
 import { navigate } from "../router.ts";
 
 export function NewContainerPage(): JSX.Element {
+  const { t } = useI18n();
   const [name, setName] = useState("");
   const [image, setImage] = useState("");
   const [cpu, setCpu] = useState("");
@@ -67,20 +69,20 @@ export function NewContainerPage(): JSX.Element {
     <div className="mx-auto max-w-2xl space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100">New container</h1>
-          <p className="text-sm text-slate-500">Created from the base image and started immediately.</p>
+          <h1 className="text-xl font-semibold text-slate-100">{t("newContainer.title")}</h1>
+          <p className="text-sm text-slate-500">{t("newContainer.subtitle")}</p>
         </div>
         <Button variant="secondary" onClick={() => navigate("/")}>
-          Cancel
+          {t("common.cancel")}
         </Button>
       </div>
 
       {error !== null && <Alert>{error}</Alert>}
 
       <form onSubmit={(event) => void submit(event)} className="space-y-4">
-        <Card title="Identity">
+        <Card title={t("newContainer.identity")}>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Name" hint="Optional — letters, digits, . _ -">
+            <Field label={t("newContainer.name")} hint={t("newContainer.nameHint")}>
               <input
                 className={INPUT_CLASS}
                 value={name}
@@ -88,7 +90,7 @@ export function NewContainerPage(): JSX.Element {
                 placeholder="my-session"
               />
             </Field>
-            <Field label="Image" hint="Defaults to sessionbox/base:latest">
+            <Field label={t("newContainer.image")} hint={t("newContainer.imageHint")}>
               <input
                 className={INPUT_CLASS}
                 value={image}
@@ -99,9 +101,9 @@ export function NewContainerPage(): JSX.Element {
           </div>
         </Card>
 
-        <Card title="Resources" >
+        <Card title={t("newContainer.resources")}>
           <div className="grid grid-cols-3 gap-4">
-            <Field label="CPU (cores)">
+            <Field label={t("newContainer.cpu")}>
               <input
                 className={INPUT_CLASS}
                 value={cpu}
@@ -110,7 +112,7 @@ export function NewContainerPage(): JSX.Element {
                 inputMode="decimal"
               />
             </Field>
-            <Field label="Memory (MB)">
+            <Field label={t("newContainer.memory")}>
               <input
                 className={INPUT_CLASS}
                 value={memory}
@@ -119,7 +121,7 @@ export function NewContainerPage(): JSX.Element {
                 inputMode="numeric"
               />
             </Field>
-            <Field label="PIDs limit">
+            <Field label={t("newContainer.pids")}>
               <input
                 className={INPUT_CLASS}
                 value={pids}
@@ -131,15 +133,10 @@ export function NewContainerPage(): JSX.Element {
           </div>
         </Card>
 
-        <Card title="Networks">
-          <p className="mb-3 text-xs text-slate-500">
-            The default network is always attached. Pick shared networks so this container can
-            reach — and be reached by — other sessions by name.
-          </p>
+        <Card title={t("newContainer.networks")}>
+          <p className="mb-3 text-xs text-slate-500">{t("newContainer.networksHint")}</p>
           {networks.length === 0 ? (
-            <p className="text-sm text-slate-500">
-              No shared networks yet — create one on the Networks page.
-            </p>
+            <p className="text-sm text-slate-500">{t("newContainer.networksEmpty")}</p>
           ) : (
             <div className="space-y-2">
               {networks.map((network) => (
@@ -163,7 +160,7 @@ export function NewContainerPage(): JSX.Element {
           )}
         </Card>
 
-        <Card title="Lifecycle">
+        <Card title={t("newContainer.lifecycle")}>
           <div className="space-y-3">
             <label className="flex items-center gap-2 text-sm text-slate-300">
               <input
@@ -172,11 +169,14 @@ export function NewContainerPage(): JSX.Element {
                 checked={autoStop}
                 onChange={(event) => setAutoStop(event.target.checked)}
               />
-              Automatic stop
+              {t("container.autoStop")}
             </label>
 
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Idle timeout (minutes)" hint="Stop after this long without activity">
+              <Field
+                label={t("container.idleTimeout")}
+                hint={t("container.idleTimeoutHint")}
+              >
                 <input
                   className={INPUT_CLASS}
                   value={idleMinutes}
@@ -186,7 +186,10 @@ export function NewContainerPage(): JSX.Element {
                   disabled={!autoStop}
                 />
               </Field>
-              <Field label="Maximum lifetime (minutes)" hint="Optional hard limit">
+              <Field
+                label={t("container.maxLifetime")}
+                hint={t("container.maxLifetimeHint")}
+              >
                 <input
                   className={INPUT_CLASS}
                   value={maxLifetimeMinutes}
@@ -206,17 +209,17 @@ export function NewContainerPage(): JSX.Element {
                 onChange={(event) => setDeleteAfterStop(event.target.checked)}
                 disabled={!autoStop}
               />
-              Delete after stop
+              {t("container.deleteAfterStop")}
             </label>
           </div>
         </Card>
 
         <div className="flex justify-end gap-2">
           <Button variant="secondary" type="button" onClick={() => navigate("/")}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button type="submit" disabled={busy}>
-            {busy ? "Creating…" : "Create container"}
+            {busy ? t("common.creating") : t("newContainer.create")}
           </Button>
         </div>
       </form>

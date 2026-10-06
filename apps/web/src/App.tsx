@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type JSX } from "react";
 import { api, ApiError, type SessionUser } from "./api.ts";
 import { Layout } from "./components/Layout.tsx";
+import { useI18n } from "./i18n.tsx";
 import { ContainerPage } from "./pages/ContainerPage.tsx";
 import { ContainersPage } from "./pages/ContainersPage.tsx";
 import { LoginPage } from "./pages/LoginPage.tsx";
@@ -11,6 +12,7 @@ import { SetupPage } from "./pages/SetupPage.tsx";
 import { navigate, useRoute } from "./router.ts";
 
 export function App(): JSX.Element {
+  const { t } = useI18n();
   const route = useRoute();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [ready, setReady] = useState(false);
@@ -57,7 +59,9 @@ export function App(): JSX.Element {
   }, []);
 
   if (!ready || needsSetup === null) {
-    return <div className="grid min-h-screen place-items-center text-slate-500">Loading…</div>;
+    return (
+      <div className="grid min-h-screen place-items-center text-slate-500">{t("app.loading")}</div>
+    );
   }
 
   if (needsSetup) {

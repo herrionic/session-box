@@ -1,6 +1,8 @@
 import { useState, type FormEvent, type JSX } from "react";
 import { api, type SessionUser } from "../api.ts";
+import { LanguageSelect } from "../components/LanguageSelect.tsx";
 import { Button, Field, INPUT_CLASS } from "../components/ui.tsx";
+import { useI18n } from "../i18n.tsx";
 import { describeError } from "../lib/errors.ts";
 
 /**
@@ -8,6 +10,7 @@ import { describeError } from "../lib/errors.ts";
  * Creating the account signs the user in, so the instance is usable right away.
  */
 export function SetupPage({ onDone }: { onDone: (user: SessionUser) => void }): JSX.Element {
+  const { t } = useI18n();
   const [username, setUsername] = useState("admin");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
@@ -20,7 +23,7 @@ export function SetupPage({ onDone }: { onDone: (user: SessionUser) => void }): 
     setError(null);
 
     if (password !== confirm) {
-      setError("Passwords do not match.");
+      setError(t("setup.mismatch"));
       return;
     }
 
@@ -41,17 +44,18 @@ export function SetupPage({ onDone }: { onDone: (user: SessionUser) => void }): 
 
   return (
     <div className="grid min-h-screen place-items-center px-6">
+      <div className="fixed right-4 top-4">
+        <LanguageSelect />
+      </div>
       <form
         onSubmit={(event) => void submit(event)}
         className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900/60 p-6"
       >
-        <h1 className="text-xl font-semibold text-slate-100">Welcome to SessionBox</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Create the owner account. This wizard appears only once — afterwards you sign in normally.
-        </p>
+        <h1 className="text-xl font-semibold text-slate-100">{t("setup.title")}</h1>
+        <p className="mt-1 text-sm text-slate-500">{t("setup.subtitle")}</p>
 
         <div className="mt-6 space-y-4">
-          <Field label="Username">
+          <Field label={t("setup.username")}>
             <input
               className={INPUT_CLASS}
               value={username}
@@ -59,7 +63,7 @@ export function SetupPage({ onDone }: { onDone: (user: SessionUser) => void }): 
               autoComplete="username"
             />
           </Field>
-          <Field label="Display name" hint="Optional">
+          <Field label={t("setup.displayName")} hint={t("setup.displayNameHint")}>
             <input
               className={INPUT_CLASS}
               value={displayName}
@@ -67,7 +71,7 @@ export function SetupPage({ onDone }: { onDone: (user: SessionUser) => void }): 
               placeholder={username}
             />
           </Field>
-          <Field label="Password" hint="At least 8 characters">
+          <Field label={t("setup.password")} hint={t("setup.passwordHint")}>
             <input
               className={INPUT_CLASS}
               type="password"
@@ -76,7 +80,7 @@ export function SetupPage({ onDone }: { onDone: (user: SessionUser) => void }): 
               autoComplete="new-password"
             />
           </Field>
-          <Field label="Repeat password">
+          <Field label={t("setup.repeatPassword")}>
             <input
               className={INPUT_CLASS}
               type="password"
@@ -94,7 +98,7 @@ export function SetupPage({ onDone }: { onDone: (user: SessionUser) => void }): 
           className="mt-6 w-full"
           disabled={busy || username.trim() === "" || password.length < 8}
         >
-          {busy ? "Creating…" : "Create account and continue"}
+          {busy ? t("setup.submitting") : t("setup.submit")}
         </Button>
       </form>
     </div>

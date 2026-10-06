@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type JSX } from "react";
 import type { FileEntry } from "@sessionbox/protocol";
 import { api } from "../api.ts";
+import { useI18n } from "../i18n.tsx";
 import { describeError } from "../lib/errors.ts";
 import { Alert, Button } from "./ui.tsx";
 
 const WORKSPACE = "/workspace";
 
 export function FileBrowser({ containerId }: { containerId: string }): JSX.Element {
+  const { t } = useI18n();
   const [path, setPath] = useState(WORKSPACE);
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +48,9 @@ export function FileBrowser({ containerId }: { containerId: string }): JSX.Eleme
   };
 
   const create = async (type: "file" | "directory"): Promise<void> => {
-    const name = window.prompt(type === "file" ? "New file name" : "New folder name");
+    const name = window.prompt(
+      type === "file" ? t("files.newFileName") : t("files.newFolderName"),
+    );
     if (name === null || name.trim() === "") return;
     setError(null);
     try {
@@ -58,7 +62,7 @@ export function FileBrowser({ containerId }: { containerId: string }): JSX.Eleme
   };
 
   const removeEntry = async (entry: FileEntry): Promise<void> => {
-    if (!window.confirm(`Delete ${entry.path}?`)) return;
+    if (!window.confirm(t("files.deleteConfirm", { path: entry.path }))) return;
     setError(null);
     try {
       await api.removeFile(containerId, entry.path, entry.type === "directory");
@@ -140,16 +144,16 @@ export function FileBrowser({ containerId }: { containerId: string }): JSX.Eleme
 
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => void create("file")}>
-              New file
+              {t("files.newFile")}
             </Button>
             <Button variant="secondary" onClick={() => void create("directory")}>
-              New folder
+              {t("files.newFolder")}
             </Button>
             <Button variant="secondary" onClick={() => uploadRef.current?.click()}>
-              Upload
+              {t("common.upload")}
             </Button>
             <Button variant="secondary" disabled={busy} onClick={() => void load(path)}>
-              Refresh
+              {t("common.refresh")}
             </Button>
             <input ref={uploadRef} type="file" hidden onChange={(event) => void onUpload(event)} />
           </div>
@@ -162,15 +166,15 @@ export function FileBrowser({ containerId }: { containerId: string }): JSX.Eleme
         )}
 
         {entries.length === 0 ? (
-          <p className="py-6 text-center text-sm text-slate-500">This directory is empty.</p>
+          <p className="py-6 text-center text-sm text-slate-500">{t("files.empty")}</p>
         ) : (
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-slate-800 text-xs uppercase tracking-wider text-slate-500">
-                <th className="py-2 pr-4 font-medium">Name</th>
-                <th className="py-2 pr-4 font-medium">Size</th>
-                <th className="py-2 pr-4 font-medium">Modified</th>
-                <th className="py-2 text-right font-medium">Actions</th>
+                <th className="py-2 pr-4 font-medium">{t("common.name")}</th>
+                <th className="py-2 pr-4 font-medium">{t("files.colSize")}</th>
+                <th className="py-2 pr-4 font-medium">{t("files.colModified")}</th>
+                <th className="py-2 text-right font-medium">{t("common.actions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -192,7 +196,9 @@ export function FileBrowser({ containerId }: { containerId: string }): JSX.Eleme
                     {entry.type === "directory" ? "—" : formatSize(entry.size)}
                   </td>
                   <td className="py-2 pr-4 text-slate-400">
-                    {new Date(entry.modifiedAt).toLocaleString()}
+                    {new Date(entry.modifiedAt).toLocaleString(
+                      document.documentElement.lang || undefined,
+                    )}
                   </td>
                   <td className="py-2">
                     <div className="flex justify-end gap-2">
@@ -201,11 +207,11 @@ export function FileBrowser({ containerId }: { containerId: string }): JSX.Eleme
                           className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-200 transition hover:bg-slate-700"
                           href={api.downloadUrl(containerId, entry.path)}
                         >
-                          Download
+                          {t("common.download")}
                         </a>
                       ) : null}
                       <Button variant="danger" onClick={() => void removeEntry(entry)}>
-                        Delete
+                        {t("common.delete")}
                       </Button>
                     </div>
                   </td>
@@ -225,16 +231,16 @@ export function FileBrowser({ containerId }: { containerId: string }): JSX.Eleme
                 disabled={saving || openFile.content === openFile.original}
                 onClick={() => void save()}
               >
-                {saving ? "Saving…" : "Save"}
+                {saving ? t("common.saving") : t("common.save")}
               </Button>
               <a
                 className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-200 transition hover:bg-slate-700"
                 href={api.downloadUrl(containerId, openFile.path)}
               >
-                Download
+                {t("common.download")}
               </a>
               <Button variant="secondary" onClick={() => setOpenFile(null)}>
-                Close
+                {t("common.close")}
               </Button>
             </div>
           </div>

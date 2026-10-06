@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent, type JSX } from "react";
 import { api, type ApiTokenEntry, type SessionUser } from "../api.ts";
 import { Alert, Button, Card, Field, INPUT_CLASS } from "../components/ui.tsx";
+import { useI18n } from "../i18n.tsx";
 import { describeError } from "../lib/errors.ts";
 
 export function SettingsPage({
@@ -10,11 +11,12 @@ export function SettingsPage({
   user: SessionUser;
   onUser: (user: SessionUser) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Settings</h1>
-        <p className="text-sm text-slate-500">Profile, password and API tokens for plugins.</p>
+        <h1 className="text-xl font-semibold text-slate-100">{t("settings.title")}</h1>
+        <p className="text-sm text-slate-500">{t("settings.subtitle")}</p>
       </div>
       <ProfileCard user={user} onUser={onUser} />
       <PasswordCard />
@@ -30,6 +32,7 @@ function ProfileCard({
   user: SessionUser;
   onUser: (user: SessionUser) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const [displayName, setDisplayName] = useState(user.displayName);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -43,7 +46,7 @@ function ProfileCard({
     try {
       const response = await api.updateProfile(displayName.trim());
       onUser(response.user);
-      setMessage("Display name updated.");
+      setMessage(t("settings.profileSaved"));
     } catch (caught) {
       setError(describeError(caught));
     } finally {
@@ -52,13 +55,13 @@ function ProfileCard({
   };
 
   return (
-    <Card title="Profile">
+    <Card title={t("settings.profile")}>
       <form onSubmit={(event) => void save(event)} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Username">
+          <Field label={t("settings.username")}>
             <input className={`${INPUT_CLASS} opacity-60`} value={user.username} disabled />
           </Field>
-          <Field label="Display name">
+          <Field label={t("settings.displayName")}>
             <input
               className={INPUT_CLASS}
               value={displayName}
@@ -69,7 +72,7 @@ function ProfileCard({
         {error !== null && <Alert>{error}</Alert>}
         <div className="flex items-center gap-3">
           <Button type="submit" disabled={busy || displayName.trim() === ""}>
-            {busy ? "Saving…" : "Save profile"}
+            {busy ? t("common.saving") : t("settings.saveProfile")}
           </Button>
           {message !== null && <span className="text-sm text-emerald-300">{message}</span>}
         </div>
@@ -79,6 +82,7 @@ function ProfileCard({
 }
 
 function PasswordCard(): JSX.Element {
+  const { t } = useI18n();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -92,14 +96,14 @@ function PasswordCard(): JSX.Element {
     setError(null);
 
     if (newPassword !== confirmPassword) {
-      setError("New passwords do not match.");
+      setError(t("settings.passwordMismatch"));
       return;
     }
 
     setBusy(true);
     try {
       await api.changePassword(currentPassword, newPassword);
-      setMessage("Password changed.");
+      setMessage(t("settings.passwordChanged"));
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -111,9 +115,9 @@ function PasswordCard(): JSX.Element {
   };
 
   return (
-    <Card title="Password">
+    <Card title={t("settings.password")}>
       <form onSubmit={(event) => void save(event)} className="space-y-4">
-        <Field label="Current password">
+        <Field label={t("settings.currentPassword")}>
           <input
             className={INPUT_CLASS}
             type="password"
@@ -123,7 +127,7 @@ function PasswordCard(): JSX.Element {
           />
         </Field>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="New password" hint="At least 8 characters">
+          <Field label={t("settings.newPassword")} hint={t("settings.newPasswordHint")}>
             <input
               className={INPUT_CLASS}
               type="password"
@@ -132,7 +136,7 @@ function PasswordCard(): JSX.Element {
               autoComplete="new-password"
             />
           </Field>
-          <Field label="Repeat new password">
+          <Field label={t("settings.repeatNewPassword")}>
             <input
               className={INPUT_CLASS}
               type="password"
@@ -145,7 +149,7 @@ function PasswordCard(): JSX.Element {
         {error !== null && <Alert>{error}</Alert>}
         <div className="flex items-center gap-3">
           <Button type="submit" disabled={busy || currentPassword === "" || newPassword.length < 8}>
-            {busy ? "Saving…" : "Change password"}
+            {busy ? t("common.saving") : t("settings.changePassword")}
           </Button>
           {message !== null && <span className="text-sm text-emerald-300">{message}</span>}
         </div>
@@ -155,6 +159,7 @@ function PasswordCard(): JSX.Element {
 }
 
 function TokensCard(): JSX.Element {
+  const { t } = useI18n();
   const [tokens, setTokens] = useState<ApiTokenEntry[] | null>(null);
   const [name, setName] = useState("");
   const [createdToken, setCreatedToken] = useState<string | null>(null);
@@ -192,7 +197,7 @@ function TokensCard(): JSX.Element {
   };
 
   const revoke = async (entry: ApiTokenEntry): Promise<void> => {
-    if (!window.confirm(`Revoke token "${entry.name}"? Plugins using it lose access.`)) return;
+    if (!window.confirm(t("settings.revokeConfirm", { name: entry.name }))) return;
     try {
       await api.revokeToken(entry.id);
       await refresh();
@@ -202,16 +207,12 @@ function TokensCard(): JSX.Element {
   };
 
   return (
-    <Card title="API tokens">
-      <p className="mb-4 text-sm text-slate-400">
-        Tokens authenticate the Pi / DSH plugins. The plaintext is shown exactly once.
-      </p>
+    <Card title={t("settings.tokens")}>
+      <p className="mb-4 text-sm text-slate-400">{t("settings.tokensHint")}</p>
 
       {createdToken !== null && (
         <div className="mb-4 rounded-lg border border-emerald-900 bg-emerald-950/40 p-3">
-          <div className="text-xs font-medium text-emerald-300">
-            New token — copy it now, it will not be shown again
-          </div>
+          <div className="text-xs font-medium text-emerald-300">{t("settings.newToken")}</div>
           <code className="mt-1 block break-all font-mono text-sm text-emerald-100">
             {createdToken}
           </code>
@@ -220,7 +221,7 @@ function TokensCard(): JSX.Element {
 
       <form onSubmit={(event) => void create(event)} className="mb-4 flex items-end gap-3">
         <div className="flex-1">
-          <Field label="Token name">
+          <Field label={t("settings.tokenName")}>
             <input
               className={INPUT_CLASS}
               value={name}
@@ -230,7 +231,7 @@ function TokensCard(): JSX.Element {
           </Field>
         </div>
         <Button type="submit" disabled={busy || name.trim() === ""}>
-          {busy ? "Generating…" : "Generate token"}
+          {busy ? t("settings.generating") : t("settings.generateToken")}
         </Button>
       </form>
 
@@ -239,25 +240,25 @@ function TokensCard(): JSX.Element {
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-slate-800 text-xs uppercase tracking-wider text-slate-500">
-            <th className="py-2 pr-4 font-medium">Name</th>
-            <th className="py-2 pr-4 font-medium">Prefix</th>
-            <th className="py-2 pr-4 font-medium">Created</th>
-            <th className="py-2 pr-4 font-medium">Last used</th>
-            <th className="py-2 text-right font-medium">Actions</th>
+            <th className="py-2 pr-4 font-medium">{t("common.name")}</th>
+            <th className="py-2 pr-4 font-medium">{t("settings.colPrefix")}</th>
+            <th className="py-2 pr-4 font-medium">{t("common.created")}</th>
+            <th className="py-2 pr-4 font-medium">{t("settings.colLastUsed")}</th>
+            <th className="py-2 text-right font-medium">{t("common.actions")}</th>
           </tr>
         </thead>
         <tbody>
           {tokens === null && (
             <tr>
               <td colSpan={5} className="py-4 text-center text-slate-500">
-                Loading…
+                {t("app.loading")}
               </td>
             </tr>
           )}
           {tokens !== null && tokens.length === 0 && (
             <tr>
               <td colSpan={5} className="py-4 text-center text-slate-500">
-                No tokens yet.
+                {t("settings.tokensEmpty")}
               </td>
             </tr>
           )}
@@ -267,11 +268,11 @@ function TokensCard(): JSX.Element {
               <td className="py-2 pr-4 font-mono text-xs text-slate-400">{entry.prefix}…</td>
               <td className="py-2 pr-4 text-slate-400">{formatDate(entry.createdAt)}</td>
               <td className="py-2 pr-4 text-slate-400">
-                {entry.lastUsedAt === undefined ? "never" : formatDate(entry.lastUsedAt)}
+                {entry.lastUsedAt === undefined ? t("common.never") : formatDate(entry.lastUsedAt)}
               </td>
               <td className="py-2 text-right">
                 <Button variant="danger" onClick={() => void revoke(entry)}>
-                  Revoke
+                  {t("settings.revoke")}
                 </Button>
               </td>
             </tr>
@@ -284,5 +285,7 @@ function TokensCard(): JSX.Element {
 
 function formatDate(iso: string): string {
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+  return Number.isNaN(date.getTime())
+    ? iso
+    : date.toLocaleString(document.documentElement.lang || undefined);
 }

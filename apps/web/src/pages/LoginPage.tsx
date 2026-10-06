@@ -1,9 +1,12 @@
 import { useState, type FormEvent, type JSX } from "react";
 import { api, type SessionUser } from "../api.ts";
+import { LanguageSelect } from "../components/LanguageSelect.tsx";
 import { Button, Field, INPUT_CLASS } from "../components/ui.tsx";
+import { useI18n } from "../i18n.tsx";
 import { describeError } from "../lib/errors.ts";
 
 export function LoginPage({ onLogin }: { onLogin: (user: SessionUser) => void }): JSX.Element {
+  const { t } = useI18n();
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -25,15 +28,18 @@ export function LoginPage({ onLogin }: { onLogin: (user: SessionUser) => void })
 
   return (
     <div className="grid min-h-screen place-items-center px-6">
+      <div className="fixed right-4 top-4">
+        <LanguageSelect />
+      </div>
       <form
         onSubmit={(event) => void submit(event)}
         className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900/60 p-6"
       >
         <h1 className="text-xl font-semibold text-slate-100">SessionBox</h1>
-        <p className="mt-1 text-sm text-slate-500">containers as session runtime</p>
+        <p className="mt-1 text-sm text-slate-500">{t("app.tagline")}</p>
 
         <div className="mt-6 space-y-4">
-          <Field label="Username">
+          <Field label={t("login.username")}>
             <input
               className={INPUT_CLASS}
               value={username}
@@ -41,7 +47,7 @@ export function LoginPage({ onLogin }: { onLogin: (user: SessionUser) => void })
               autoComplete="username"
             />
           </Field>
-          <Field label="Password">
+          <Field label={t("login.password")}>
             <input
               className={INPUT_CLASS}
               type="password"
@@ -55,7 +61,7 @@ export function LoginPage({ onLogin }: { onLogin: (user: SessionUser) => void })
         {error !== null && <p className="mt-4 text-sm text-rose-300">{error}</p>}
 
         <Button type="submit" className="mt-6 w-full" disabled={busy || password === ""}>
-          {busy ? "Signing in…" : "Sign in"}
+          {busy ? t("login.signingIn") : t("login.signIn")}
         </Button>
       </form>
     </div>

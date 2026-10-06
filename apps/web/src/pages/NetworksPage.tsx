@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState, type FormEvent, type JSX } from "reac
 import type { Container, Network } from "@sessionbox/protocol";
 import { api } from "../api.ts";
 import { Alert, Button, Card, Field, INPUT_CLASS, Modal } from "../components/ui.tsx";
+import { useI18n } from "../i18n.tsx";
 import { describeError } from "../lib/errors.ts";
 import { navigate } from "../router.ts";
 
 /** Networks as a resource: create (dialog), inspect attachments, delete. */
 export function NetworksPage(): JSX.Element {
+  const { t } = useI18n();
   const [networks, setNetworks] = useState<Network[] | null>(null);
   const [containers, setContainers] = useState<Container[]>([]);
   const [creating, setCreating] = useState(false);
@@ -57,7 +59,7 @@ export function NetworksPage(): JSX.Element {
   };
 
   const remove = async (network: Network): Promise<void> => {
-    if (!window.confirm(`Delete network "${network.name}"?`)) return;
+    if (!window.confirm(t("networks.deleteConfirm", { name: network.name }))) return;
     setBusy(true);
     setError(null);
     try {
@@ -74,13 +76,10 @@ export function NetworksPage(): JSX.Element {
     <div className="space-y-4">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100">Networks</h1>
-          <p className="text-sm text-slate-500">
-            Containers on the same network reach each other by name. The default network is always
-            attached to every container.
-          </p>
+          <h1 className="text-xl font-semibold text-slate-100">{t("networks.title")}</h1>
+          <p className="text-sm text-slate-500">{t("networks.subtitle")}</p>
         </div>
-        <Button onClick={() => setCreating(true)}>New network</Button>
+        <Button onClick={() => setCreating(true)}>{t("networks.new")}</Button>
       </div>
 
       {error !== null && <Alert>{error}</Alert>}
@@ -89,24 +88,24 @@ export function NetworksPage(): JSX.Element {
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-slate-800 text-xs uppercase tracking-wider text-slate-500">
-              <th className="py-2 pr-4 font-medium">Name</th>
-              <th className="py-2 pr-4 font-medium">Containers</th>
-              <th className="py-2 pr-4 font-medium">Created</th>
-              <th className="py-2 text-right font-medium">Actions</th>
+              <th className="py-2 pr-4 font-medium">{t("common.name")}</th>
+              <th className="py-2 pr-4 font-medium">{t("networks.colContainers")}</th>
+              <th className="py-2 pr-4 font-medium">{t("common.created")}</th>
+              <th className="py-2 text-right font-medium">{t("common.actions")}</th>
             </tr>
           </thead>
           <tbody>
             {networks === null && (
               <tr>
                 <td colSpan={4} className="py-6 text-center text-slate-500">
-                  Loading…
+                  {t("app.loading")}
                 </td>
               </tr>
             )}
             {networks !== null && networks.length === 0 && (
               <tr>
                 <td colSpan={4} className="py-6 text-center text-slate-500">
-                  No shared networks yet — create one to connect containers across sessions.
+                  {t("networks.empty")}
                 </td>
               </tr>
             )}
@@ -136,11 +135,13 @@ export function NetworksPage(): JSX.Element {
                 <td className="py-3 pr-4 align-top text-slate-400">
                   {network.createdAt === undefined
                     ? "—"
-                    : new Date(network.createdAt).toLocaleString()}
+                    : new Date(network.createdAt).toLocaleString(
+                        document.documentElement.lang || undefined,
+                      )}
                 </td>
                 <td className="py-3 align-top text-right">
                   <Button variant="danger" disabled={busy} onClick={() => void remove(network)}>
-                    Delete
+                    {t("common.delete")}
                   </Button>
                 </td>
               </tr>
@@ -150,9 +151,9 @@ export function NetworksPage(): JSX.Element {
       </Card>
 
       {creating && (
-        <Modal title="New network" onClose={closeModal}>
+        <Modal title={t("networks.modalTitle")} onClose={closeModal}>
           <form onSubmit={(event) => void create(event)} className="space-y-4">
-            <Field label="Name" hint="Letters, digits, . _ - (e.g. team-a)">
+            <Field label={t("common.name")} hint={t("networks.nameHint")}>
               <input
                 autoFocus
                 className={INPUT_CLASS}
@@ -166,10 +167,10 @@ export function NetworksPage(): JSX.Element {
 
             <div className="flex justify-end gap-2">
               <Button variant="secondary" type="button" onClick={closeModal}>
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button type="submit" disabled={busy || name.trim() === ""}>
-                {busy ? "Creating…" : "Create network"}
+                {busy ? t("common.creating") : t("networks.create")}
               </Button>
             </div>
           </form>

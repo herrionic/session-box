@@ -4,6 +4,7 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import type { TerminalServerMessage } from "@sessionbox/protocol";
 import { api } from "../api.ts";
+import { useI18n } from "../i18n.tsx";
 import { Alert, Button } from "./ui.tsx";
 
 type ConnectionState = "connecting" | "connected" | "closed" | "error";
@@ -16,6 +17,7 @@ const STATE_STYLES: Record<ConnectionState, string> = {
 };
 
 export function TerminalPanel({ containerId }: { containerId: string }): JSX.Element {
+  const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
@@ -47,7 +49,8 @@ export function TerminalPanel({ containerId }: { containerId: string }): JSX.Ele
       } else if (message.type === "ready") {
         setState("connected");
       } else if (message.type === "exit") {
-        term.write(`\r\n\x1b[90m[process exited with code ${message.code ?? "?"}]\x1b[0m\r\n`);
+        const notice = t("terminal.exited", { code: message.code ?? "?" });
+        term.write(`\r\n\x1b[90m${notice}\x1b[0m\r\n`);
         setState("closed");
       } else if (message.type === "error") {
         setError(`${message.message} (${message.code})`);
@@ -56,7 +59,7 @@ export function TerminalPanel({ containerId }: { containerId: string }): JSX.Ele
     };
     socket.onclose = () => setState((current) => (current === "error" ? current : "closed"));
     socket.onerror = () => setState("error");
-  }, [containerId]);
+  }, [containerId, t]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -109,13 +112,13 @@ export function TerminalPanel({ containerId }: { containerId: string }): JSX.Ele
     <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-          Terminal
+          {t("terminal.title")}
           <span className={`rounded-full px-2 py-0.5 text-xs font-medium normal-case ${STATE_STYLES[state]}`}>
-            {state}
+            {t(`terminal.${state}`)}
           </span>
         </h2>
         <Button variant="secondary" onClick={connect} disabled={state === "connecting"}>
-          Reconnect
+          {t("terminal.reconnect")}
         </Button>
       </div>
 

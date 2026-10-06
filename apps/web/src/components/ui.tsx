@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, JSX, ReactNode } from "react";
+import { useI18n, type MessageKey } from "../i18n.tsx";
 
 type ButtonVariant = "primary" | "secondary" | "danger";
 
@@ -76,11 +77,21 @@ const STATUS_STYLES: Record<string, string> = {
   failed: "bg-rose-950/60 text-rose-300 border-rose-900",
 };
 
+const STATUS_KEYS: Record<string, MessageKey> = {
+  running: "status.running",
+  stopped: "status.stopped",
+  creating: "status.creating",
+  deleting: "status.deleting",
+  failed: "status.failed",
+};
+
 export function StatusBadge({ status }: { status: string }): JSX.Element {
+  const { t } = useI18n();
   const style = STATUS_STYLES[status] ?? STATUS_STYLES.stopped;
+  const key = STATUS_KEYS[status];
   return (
     <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${style}`}>
-      {status}
+      {key !== undefined ? t(key) : status}
     </span>
   );
 }
@@ -123,6 +134,7 @@ export function Modal({
   onClose: () => void;
   children: ReactNode;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 p-4 backdrop-blur-sm"
@@ -141,7 +153,7 @@ export function Modal({
             type="button"
             className="rounded-lg px-2 text-slate-500 transition hover:text-slate-200"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t("common.close")}
           >
             ✕
           </button>

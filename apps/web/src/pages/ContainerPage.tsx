@@ -6,12 +6,14 @@ import { NetworkPanel } from "../components/NetworkPanel.tsx";
 import { TerminalPanel } from "../components/TerminalPanel.tsx";
 import { Alert, Button, Card, Field, INPUT_CLASS, StatusBadge } from "../components/ui.tsx";
 import { PlayIcon, RestartIcon, StopIcon, TrashIcon } from "../components/Icons.tsx";
+import { useI18n, type MessageKey } from "../i18n.tsx";
 import { describeError } from "../lib/errors.ts";
 import { navigate } from "../router.ts";
 
 type Tab = "overview" | "files" | "terminal" | "network";
 
 export function ContainerPage({ containerId }: { containerId: string }): JSX.Element {
+  const { t } = useI18n();
   const [container, setContainer] = useState<Container | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
@@ -44,7 +46,7 @@ export function ContainerPage({ containerId }: { containerId: string }): JSX.Ele
 
   const remove = async (): Promise<void> => {
     if (container === null) return;
-    if (!window.confirm(`Delete container "${container.name}"? This cannot be undone.`)) return;
+    if (!window.confirm(t("containers.deleteConfirm", { name: container.name }))) return;
     await act(async () => {
       await api.remove(container.id);
       navigate("/");
@@ -54,9 +56,13 @@ export function ContainerPage({ containerId }: { containerId: string }): JSX.Ele
   if (container === null) {
     return (
       <div className="space-y-4">
-        {error !== null ? <Alert>{error}</Alert> : <div className="text-slate-500">Loading…</div>}
+        {error !== null ? (
+          <Alert>{error}</Alert>
+        ) : (
+          <div className="text-slate-500">{t("app.loading")}</div>
+        )}
         <Button variant="secondary" onClick={() => navigate("/")}>
-          Back to containers
+          {t("container.backShort")}
         </Button>
       </div>
     );
@@ -69,7 +75,7 @@ export function ContainerPage({ containerId }: { containerId: string }): JSX.Ele
         className="text-sm text-slate-400 transition hover:text-slate-200"
         onClick={() => navigate("/")}
       >
-        ← All containers
+        {t("container.back")}
       </button>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -89,7 +95,7 @@ export function ContainerPage({ containerId }: { containerId: string }): JSX.Ele
               disabled={busy}
               onClick={() => void act(() => api.stop(container.id))}
             >
-              <StopIcon /> Stop
+              <StopIcon /> {t("containers.stop")}
             </Button>
           ) : (
             <Button
@@ -98,7 +104,7 @@ export function ContainerPage({ containerId }: { containerId: string }): JSX.Ele
               disabled={busy || container.status === "creating"}
               onClick={() => void act(() => api.start(container.id))}
             >
-              <PlayIcon /> Start
+              <PlayIcon /> {t("containers.start")}
             </Button>
           )}
           <Button
@@ -107,7 +113,7 @@ export function ContainerPage({ containerId }: { containerId: string }): JSX.Ele
             disabled={busy}
             onClick={() => void act(() => api.restart(container.id))}
           >
-            <RestartIcon /> Restart
+            <RestartIcon /> {t("containers.restart")}
           </Button>
           <Button
             variant="danger"
@@ -115,7 +121,7 @@ export function ContainerPage({ containerId }: { containerId: string }): JSX.Ele
             disabled={busy}
             onClick={() => void remove()}
           >
-            <TrashIcon /> Delete
+            <TrashIcon /> {t("common.delete")}
           </Button>
         </div>
       </div>
@@ -128,30 +134,33 @@ export function ContainerPage({ containerId }: { containerId: string }): JSX.Ele
             key={name}
             type="button"
             onClick={() => setTab(name)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm capitalize transition ${
+            className={`-mb-px border-b-2 px-4 py-2 text-sm transition ${
               tab === name
                 ? "border-indigo-500 text-slate-100"
                 : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
-            {name}
+            {t(`container.tab.${name}`)}
           </button>
         ))}
       </div>
 
       {tab === "overview" && (
         <div className="space-y-4">
-          <Card title="Overview">
+          <Card title={t("container.overview")}>
             <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
-              <Row label="Image" value={container.image} />
-              <Row label="Runtime" value={container.runtime} />
-              <Row label="Workspace" value={container.workspace} />
-              <Row label="Resources" value={resourcesText(container)} />
-              <Row label="Created" value={formatDate(container.createdAt)} />
-              <Row label="Started" value={formatDate(container.startedAt)} />
-              <Row label="Stopped" value={formatDate(container.stoppedAt)} />
-              <Row label="Last activity" value={formatDate(container.lastActivityAt)} />
-              <Row label="Active connections" value={String(container.activeConnections)} />
+              <Row label={t("container.image")} value={container.image} />
+              <Row label={t("container.runtime")} value={container.runtime} />
+              <Row label={t("container.workspace")} value={container.workspace} />
+              <Row label={t("container.resources")} value={resourcesText(container, t)} />
+              <Row label={t("container.created")} value={formatDate(container.createdAt)} />
+              <Row label={t("container.started")} value={formatDate(container.startedAt)} />
+              <Row label={t("container.stopped")} value={formatDate(container.stoppedAt)} />
+              <Row label={t("container.lastActivity")} value={formatDate(container.lastActivityAt)} />
+              <Row
+                label={t("container.activeConnections")}
+                value={String(container.activeConnections)}
+              />
             </dl>
           </Card>
 
@@ -189,6 +198,7 @@ function LifecycleForm({
   onSaved: (container: Container) => void;
   onError: (message: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const [autoStop, setAutoStop] = useState(container.lifecycle.autoStop);
   const [idleMinutes, setIdleMinutes] = useState(minutesInput(container.lifecycle.idleTimeoutSeconds));
   const [maxLifetimeMinutes, setMaxLifetimeMinutes] = useState(
@@ -220,7 +230,7 @@ function LifecycleForm({
   };
 
   return (
-    <Card title="Lifecycle">
+    <Card title={t("container.lifecycle")}>
       <div className="space-y-3">
         <label className="flex items-center gap-2 text-sm text-slate-300">
           <input
@@ -229,11 +239,11 @@ function LifecycleForm({
             checked={autoStop}
             onChange={(event) => setAutoStop(event.target.checked)}
           />
-          Automatic stop
+          {t("container.autoStop")}
         </label>
 
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Idle timeout (minutes)">
+          <Field label={t("container.idleTimeout")}>
             <input
               className={INPUT_CLASS}
               value={idleMinutes}
@@ -243,7 +253,7 @@ function LifecycleForm({
               disabled={!autoStop}
             />
           </Field>
-          <Field label="Maximum lifetime (minutes)">
+          <Field label={t("container.maxLifetime")}>
             <input
               className={INPUT_CLASS}
               value={maxLifetimeMinutes}
@@ -263,20 +273,17 @@ function LifecycleForm({
             onChange={(event) => setDeleteAfterStop(event.target.checked)}
             disabled={!autoStop}
           />
-          Delete after stop
+          {t("container.deleteAfterStop")}
         </label>
 
         <div className="flex items-center gap-3">
           <Button disabled={busy} onClick={() => void save()}>
-            {busy ? "Saving…" : "Save lifecycle"}
+            {busy ? t("common.saving") : t("container.saveLifecycle")}
           </Button>
-          {saved && <span className="text-sm text-emerald-300">Saved</span>}
+          {saved && <span className="text-sm text-emerald-300">{t("common.saved")}</span>}
         </div>
 
-        <p className="text-xs text-slate-500">
-          Lifecycle is enforced by SessionBox, not by the agent. A plugin disconnect never stops the
-          container.
-        </p>
+        <p className="text-xs text-slate-500">{t("container.lifecycleNote")}</p>
       </div>
     </Card>
   );
@@ -291,18 +298,23 @@ function secondsFromMinutes(value: string): number | null {
   return value.trim() === "" || !Number.isFinite(minutes) || minutes <= 0 ? null : Math.round(minutes * 60);
 }
 
-function resourcesText(container: Container): string {
+function resourcesText(
+  container: Container,
+  t: (key: MessageKey, params?: Record<string, string | number>) => string,
+): string {
   const parts: string[] = [];
   if (container.resources.cpuLimit !== undefined) parts.push(`${container.resources.cpuLimit} CPU`);
   if (container.resources.memoryLimitMb !== undefined) {
     parts.push(`${container.resources.memoryLimitMb} MB`);
   }
   if (container.resources.pidsLimit !== undefined) parts.push(`${container.resources.pidsLimit} pids`);
-  return parts.length > 0 ? parts.join(" · ") : "unlimited";
+  return parts.length > 0 ? parts.join(" · ") : t("common.unlimited");
 }
 
 function formatDate(iso: string | undefined): string {
   if (iso === undefined) return "—";
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+  return Number.isNaN(date.getTime())
+    ? iso
+    : date.toLocaleString(document.documentElement.lang || undefined);
 }
