@@ -20,7 +20,6 @@ COPY packages ./packages
 COPY apps/server/package.json ./apps/server/package.json
 COPY apps/web/package.json ./apps/web/package.json
 COPY plugins/pi/package.json ./plugins/pi/package.json
-COPY plugins/dsh/package.json ./plugins/dsh/package.json
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 
 # ---------- dev image target (source bind-mounted by compose.dev.yml) ----------
@@ -42,7 +41,6 @@ COPY packages ./packages
 COPY apps/server/package.json ./apps/server/package.json
 COPY apps/web/package.json ./apps/web/package.json
 COPY plugins/pi/package.json ./plugins/pi/package.json
-COPY plugins/dsh/package.json ./plugins/dsh/package.json
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile --prod --filter @sessionbox/server
 
 # ---------- runtime ----------
