@@ -15,7 +15,7 @@ SessionBox 提供容器、网络和工具接入能力，可作为 multi-agent �
 - **Web 管理**：管理容器和网络、浏览文件、打开终端，手动检查或接管环境。
 - **账号与 Token**：支持账号登录和 API Token，供插件连接服务端。
 
-目前主要使用和验证的是 DSH 插件（[独立仓库](https://github.com/Herry-too/dsh-session-box)），本仓库同时提供 Pi 适配。当前通过源码和 Docker Compose 部署。
+目前主要使用和验证的是 DSH 插件（[独立仓库](https://github.com/Herry-too/dsh-session-box)）。当前通过源码和 Docker Compose 部署。
 
 ## 快速启动
 
@@ -87,10 +87,6 @@ Agent 客户端运行在本机；插件连接 SessionBox，将支持的工具操
 
 更多配置和工具转发范围见 [DSH 插件仓库](https://github.com/Herry-too/dsh-session-box)。
 
-### Pi
-
-安装和配置方式见 [Pi 插件说明](plugins/pi/README.md)。
-
 ## 多容器协作
 
 例如，两个 Agent 分别使用 `backend` 和 `frontend` 容器：
@@ -155,13 +151,11 @@ docker compose -f docker-compose.yml -f compose.dev.yml up -d --build
 | `packages/protocol` | API 与 Agent 协议定义 |
 | `packages/client` | 插件使用的客户端 |
 | `packages/shared` | 公共辅助代码 |
-| `plugins/pi` | Pi 插件 |
 | `images/base` | 容器基础镜像 |
 
 ## 文档
 
 - [DSH 插件](https://github.com/Herry-too/dsh-session-box)
-- [Pi 插件](plugins/pi/README.md)
 - [集成说明](docs/INTEGRATION.md)
 - [协议说明](docs/PROTOCOL.md)
 
