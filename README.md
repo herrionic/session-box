@@ -15,7 +15,7 @@ SessionBox 提供容器、网络和工具接入能力，可作为 multi-agent �
 - **Web 管理**：管理容器和网络、浏览文件、打开终端，手动检查或接管环境。
 - **账号与 Token**：支持账号登录和 API Token，供插件连接服务端。
 
-目前主要使用和验证的是 DSH 插件（[独立仓库](https://github.com/Herry-too/dsh-session-box)）。当前通过源码和 Docker Compose 部署。
+目前主要使用和验证的是 DSH 插件（[独立仓库](https://github.com/herrionic/dsh-session-box)）。当前通过源码和 Docker Compose 部署。
 
 ## 快速启动
 
@@ -56,7 +56,7 @@ Agent 客户端运行在本机；插件连接 SessionBox，将支持的工具操
 ### DSH
 
 当前插件适配 `@deepseek-ai/dsh-*` 的 `0.2.0-rc.2` 版本，位于独立仓库：
-<https://github.com/Herry-too/dsh-session-box>（安装方式见仓库说明）。
+<https://github.com/herrionic/dsh-session-box>（安装方式见仓库说明）。
 
 1. 在 Web 页面创建容器。
 2. 在账号设置中创建 API Token。
@@ -85,7 +85,7 @@ Agent 客户端运行在本机；插件连接 SessionBox，将支持的工具操
 
 本机工作目录与容器的 `/workspace` 不会自动同步，已有项目需要先放入容器。
 
-更多配置和工具转发范围见 [DSH 插件仓库](https://github.com/Herry-too/dsh-session-box)。
+更多配置和工具转发范围见 [DSH 插件仓库](https://github.com/herrionic/dsh-session-box)。
 
 ## 多容器协作
 
@@ -106,7 +106,7 @@ Agent 容器默认不挂载主机目录或 Docker socket。容器中的 `agent` 
 
 这种设计主要用于将开发中的环境变更和误操作限制在容器内。容器共享主机内核，不应将其视为运行恶意代码的安全边界。
 
-Agent 客户端及其他未接管的工具仍运行在本机。DSH 插件对工作目录外路径、部分后台观察器和未配置转发的子进程存在接管范围限制，使用前请查看 [插件说明](https://github.com/Herry-too/dsh-session-box)。
+Agent 客户端及其他未接管的工具仍运行在本机。DSH 插件对工作目录外路径、部分后台观察器和未配置转发的子进程存在接管范围限制，使用前请查看 [插件说明](https://github.com/herrionic/dsh-session-box)。
 
 ## 开发
 
@@ -155,7 +155,7 @@ docker compose -f docker-compose.yml -f compose.dev.yml up -d --build
 
 ## 文档
 
-- [DSH 插件](https://github.com/Herry-too/dsh-session-box)
+- [DSH 插件](https://github.com/herrionic/dsh-session-box)
 - [集成说明](docs/INTEGRATION.md)
 - [协议说明](docs/PROTOCOL.md)
 
