@@ -107,6 +107,12 @@ describe("single-owner user system", () => {
     expect(response.json().error.code).toBe("UNAUTHORIZED");
   });
 
+  it("serves non-API paths without a session (only the API is authenticated)", async () => {
+    const response = await app.inject({ method: "GET", url: "/" });
+    // No static build is configured in tests: the route is absent, not unauthorized.
+    expect(response.statusCode).toBe(404);
+  });
+
   it("logs in, reads the profile and updates the display name", async () => {
     const cookie = await login();
 

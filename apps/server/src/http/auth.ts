@@ -20,11 +20,13 @@ export interface AuthHookOptions {
 const PUBLIC_PATHS = ["/api/health", "/api/auth/login", "/api/auth/logout", "/api/setup"];
 
 /**
- * Authentication for the whole API except the public paths. Resolution order:
- * session cookie (web UI) → static `SESSIONBOX_CLIENTS` token (env-based
- * plugins) → API token from the database (`sbt_…`). Browser WebSocket and
- * download URLs cannot set headers, so `?token=` is accepted and stripped
- * before route schemas run; the logger redacts it.
+ * Authentication for the API. The web UI (index.html and its assets) is
+ * served without a session — it has to load to show the setup wizard or the
+ * login page; every `/api/*` route is authenticated except the public paths.
+ * Resolution order: session cookie (web UI) → static `SESSIONBOX_CLIENTS`
+ * token (env-based plugins) → API token from the database (`sbt_…`). Browser
+ * WebSocket and download URLs cannot set headers, so `?token=` is accepted and
+ * stripped before route schemas run; the logger redacts it.
  *
  * Without an owner account and without configured clients the API stays open
  * (development default) and every request carries an anonymous principal.
@@ -42,6 +44,9 @@ export function createAuthHook(options: AuthHookOptions): (request: FastifyReque
     if (request.query !== null && typeof request.query === "object") {
       delete (request.query as Record<string, unknown>).token;
     }
+
+    // Only the API is authenticated; the web UI must load without a session.
+    if (!isApiPath(request.url)) return;
 
     if (isPublicPath(request.url)) return;
 
@@ -76,6 +81,12 @@ export function createAuthHook(options: AuthHookOptions): (request: FastifyReque
 
     throw new SessionBoxError("UNAUTHORIZED", "a valid session or bearer token is required");
   };
+}
+
+/** The API is the authenticated surface; everything else is the public web UI. */
+function isApiPath(url: string): boolean {
+  const path = url.split("?", 1)[0] ?? "";
+  return path === "/api" || path.startsWith("/api/");
 }
 
 function isPublicPath(url: string): boolean {
