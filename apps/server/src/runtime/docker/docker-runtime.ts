@@ -24,7 +24,7 @@ const DEFAULT_PIDS_LIMIT = 512;
 /**
  * sshd runs as root inside the container and drops to the non-root "agent" user
  * for each session. These are the only capabilities it needs; everything else
- * is dropped (PROJECT.md §21).
+ * is dropped.
  *
  * FOWNER: chmod the injected authorized_keys after chowning it to agent.
  * AUDIT_WRITE: sshd writes /proc/self/loginuid during session setup; without

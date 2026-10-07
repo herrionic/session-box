@@ -2,7 +2,7 @@ import type { ContainerRecord } from "./types.ts";
 
 /**
  * Persistence boundary. The MVP boots with the in-memory implementation;
- * SQLite lands in Day 6 behind the same interface (PROJECT.md §33).
+ * SQLite lands in Day 6 behind the same interface.
  */
 export interface ContainerRepository {
   save(record: ContainerRecord): Promise<void>;

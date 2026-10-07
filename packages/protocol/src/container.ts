@@ -28,7 +28,7 @@ export const ContainerNameSchema = z
 
 /**
  * Public container model. Runtime-neutral by design: no container IDs, no IPs,
- * no SSH details (PROJECT.md §10).
+ * no SSH details.
  */
 export const ContainerSchema = z.strictObject({
   id: z.string().min(1),

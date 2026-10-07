@@ -8,7 +8,7 @@ function invalid(message: string): SessionBoxError {
 /**
  * Normalizes a container-side POSIX path and rejects anything that is not an
  * absolute, traversal-free path. Used by the file manager and the agent
- * protocol before any SSH/SFTP call (PROJECT.md §41.1, §42).
+ * protocol before any SSH/SFTP call.
  */
 export function normalizeContainerPath(input: string): string {
   if (input.trim() === "") throw invalid("path must not be empty");

@@ -8,8 +8,7 @@ and shell capabilities inside a managed container.
 SessionBox also acts as a management and access gateway: lifecycle control,
 Web Terminal, file management, authentication and human intervention.
 
-> Status: MVP in development. See `PROJECT.md` for the full specification,
-> `docs/ARCHITECTURE.md` for the design and `TASKS.md` for the current board.
+> Status: MVP in development. See `docs/ARCHITECTURE.md` for the design.
 
 ## Quick start (Docker)
 
@@ -35,7 +34,7 @@ packages/protocol  Shared zod schemas — the only wire contract
 packages/shared    Small shared helpers (ids, time)
 images/base        Container base image (OpenSSH, non-root agent user)
 docs/              Architecture and ADRs
-scripts/           Remote sync / operations helpers
+scripts/           Deployment probe helper
 ```
 
 ## Development
@@ -62,7 +61,7 @@ but container lifecycle, SSH/SFTP and the terminal need a Docker host.
 The server is designed to run as a container on the Docker host it manages:
 
 ```bash
-# on the host (or via scripts/sync.ps1 + scripts/remote.ps1 from Windows)
+# on the host (or from a synced working copy)
 docker build -t sessionbox/base:latest images/base
 docker compose up -d --build
 ```
@@ -70,14 +69,6 @@ docker compose up -d --build
 The container mounts `/var/run/docker.sock`, creates containers as siblings on
 its Docker host, and never publishes container SSH ports. See
 `docs/ADR/0002-deployment-dood.md` for the security rationale.
-
-From a Windows workstation:
-
-```powershell
-.\scripts\sync.ps1 -HostName <ssh-host>
-.\scripts\remote.ps1 up -d --build
-.\scripts\remote.ps1 logs -f server
-```
 
 ## Boundaries
 

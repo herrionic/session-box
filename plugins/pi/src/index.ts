@@ -25,7 +25,7 @@ import { DEFAULT_CONTAINER_ROOT } from "./paths.ts";
  *
  * A Pi session gets its own container; the native bash/read/write/edit/ls tools
  * are re-registered with operations that execute inside it, so the model sees
- * exactly the same tool set while everything runs remotely (PROJECT.md §30).
+ * exactly the same tool set while everything runs remotely.
  *
  * Failure is closed: if SessionBox is unreachable the tools report an error
  * instead of silently running on the host.

@@ -143,7 +143,7 @@ product decision, not the default.
 
 ## 6. Lifecycle and ownership
 
-- A client disconnect never stops or deletes a container (PROJECT.md §39); it
+- A client disconnect never stops or deletes a container; it
   does stop execs and terminals that were in flight on that connection.
 - Open agent or terminal connections count as activity; idle auto-stop only
   applies while no connection is active.

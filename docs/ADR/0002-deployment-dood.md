@@ -9,8 +9,7 @@
 
 SessionBox is published as a Docker image. It manages container containers on the
 same Docker Engine that runs it, and it must reach those containers over SSH
-without publishing their SSH ports (PROJECT.md §21: "SSH port not published to
-the host by default").
+without publishing their SSH ports to the host.
 
 ## Decision
 
@@ -54,11 +53,11 @@ the host by default").
   ports (authentication still requires per-container keys). Per-container networks
   are a possible later hardening step.
 - Documented limitation: Docker isolation here is an agent-workspace boundary,
-  not hardened adversarial isolation (PROJECT.md §21).
+  not hardened adversarial isolation.
 
 ## Alternatives considered
 
-1. **Publish SSH ports on the host** — rejected by PROJECT.md §21.
+1. **Publish SSH ports on the host** — rejected: SSH ports stay unpublished.
 2. **Docker socket proxy (e.g. tecnativa/docker-socket-proxy)** — safer, but an
    extra component with its own allow-list tuning; not justified for the MVP.
 3. **Remote Docker over TLS with the server running outside** — rejected: the

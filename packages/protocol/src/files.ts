@@ -83,8 +83,7 @@ export type CreateFileRequest = z.infer<typeof CreateFileRequestSchema>;
 
 /**
  * Limits shared by the server and the web UI. Text editing is intentionally
- * bounded; larger payloads go through upload/download (PROJECT.md §42:
- * oversized file requests must be rejected).
+ * bounded; larger payloads go through upload/download.
  */
 export const FILE_LIMITS = {
   maxTextFileBytes: 1024 * 1024,

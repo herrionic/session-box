@@ -18,7 +18,7 @@ tool operations API: `BashOperations`, `ReadOperations`, `WriteOperations`,
   under `/workspace` pass through. Commands and file operations go to the
   container over the agent WebSocket.
 - `session_shutdown`: closes the connection only. The container keeps running,
-  so a resumed session finds the same workspace (PROJECT.md §39, §43.3).
+  so a resumed session finds the same workspace.
 - Failure is closed: when SessionBox is unreachable the tools report an error
   instead of silently running on the host.
 

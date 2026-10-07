@@ -6,7 +6,7 @@ import type { SessionBoxApp } from "../types.ts";
 
 const NameParamsSchema = z.strictObject({ name: z.string().min(1) });
 
-/** Networks as a resource: list, create, delete (PROJECT.md §10 extended). */
+/** Networks as a resource: list, create, delete. */
 export function registerNetworkRoutes(
   app: SessionBoxApp,
   deps: { networks: NetworkService },

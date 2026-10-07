@@ -34,7 +34,7 @@ interface AgentRouteDeps {
 /**
  * Agent WebSocket gateway: handshake (hello/welcome), then validated requests
  * dispatched through the agent gateway. A disconnect only ends temporary
- * access — it never stops or deletes the container (PROJECT.md §39).
+ * access — it never stops or deletes the container.
  */
 export function registerAgentRoutes(app: SessionBoxApp, deps: AgentRouteDeps): void {
   app.get("/api/ws/agent", { websocket: true }, (socket, request) => {

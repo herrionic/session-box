@@ -21,7 +21,7 @@ export interface SessionBoxClientOptions {
 }
 
 /**
- * Shared client for harness adapters (PROJECT.md §31). Harness-specific code
+ * Shared client for harness adapters. Harness-specific code
  * stays outside; this class only speaks the public SessionBox API.
  */
 export class SessionBoxClient {

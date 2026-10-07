@@ -10,7 +10,7 @@ import {
 
 /**
  * Maps SSH-layer failures to stable public error codes and keeps the details
- * in the server log (PROJECT.md §37).
+ * in the server log.
  */
 export function toPublicSshError(error: unknown, logger: Logger, event: string): SessionBoxError {
   if (error instanceof SessionBoxError) return error;

@@ -2,7 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 /**
  * Persistence boundary for sealed credential blobs. The store layer owns
- * encryption; repositories only ever see ciphertext (PROJECT.md §15).
+ * encryption; repositories only ever see ciphertext.
  */
 export interface SecretRepository {
   save(key: string, sealed: string): Promise<void>;

@@ -52,7 +52,7 @@ export interface SshShell {
 /**
  * SessionBox-side SSH/SFTP session. The transport is always a runtime-provided
  * duplex stream (`ContainerRuntime.openPortStream`); callers never see host or
- * port information (PROJECT.md §18).
+ * port information.
  */
 export interface SshSession {
   exec(command: string, options?: SshExecOptions): Promise<SshExecResult>;

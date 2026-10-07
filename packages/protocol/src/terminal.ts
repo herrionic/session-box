@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ErrorCodeSchema } from "./errors.ts";
 
-/** Client → server terminal messages (PROJECT.md §26). */
+/** Client → server terminal messages. */
 export const TerminalClientMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("input"),

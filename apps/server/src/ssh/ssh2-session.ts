@@ -49,7 +49,7 @@ const OPERATION_TIMEOUT_MS = 30_000;
 /**
  * SSH/SFTP implementation over ssh2. The TCP transport always comes from
  * `ContainerRuntime.openPortStream`, so the server never dials a container
- * directly and never exposes ports or credentials (PROJECT.md §14, §18).
+ * directly and never exposes ports or credentials.
  */
 export class Ssh2SessionFactory implements SshSessionFactory {
   constructor(private readonly options: Ssh2SessionFactoryOptions) {}

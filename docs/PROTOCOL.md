@@ -161,7 +161,7 @@ linkTarget? }`.
   (`SESSIONBOX_MAX_EXEC_COMMAND_BYTES`, `SESSIONBOX_MAX_EXEC_TIMEOUT_MS`);
   the wire caps are 4 MiB / 4 h.
 - **Connection lifetime ≠ container lifetime**: closing the socket only ends
-  temporary access; it never stops or deletes a container (PROJECT.md §39).
+  temporary access; it never stops or deletes a container.
   Reconnecting with the same `containerId` returns to the same `/workspace`.
   In-flight execs and terminals are stopped when the connection closes.
 

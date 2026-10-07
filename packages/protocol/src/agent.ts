@@ -7,7 +7,7 @@ import {
   FileMetadataSchema,
 } from "./files.ts";
 
-/** MVP protocol version (PROJECT.md §40). */
+/** MVP protocol version. */
 export const AGENT_PROTOCOL_VERSION = 2;
 
 /** Client → server handshake. */
@@ -37,7 +37,7 @@ const terminalIdSchema = z.string().min(1).max(128);
 
 /**
  * Absolute wire caps for `exec`; a deployment can enforce lower limits
- * (PROJECT.md: large heredocs are legitimate payloads).
+ * (large heredocs are legitimate payloads).
  */
 export const MAX_EXEC_COMMAND_BYTES = 4 * 1024 * 1024;
 export const MAX_EXEC_TIMEOUT_MS = 4 * 60 * 60_000;

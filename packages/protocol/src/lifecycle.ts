@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * Lifecycle behaviour is configured and enforced by SessionBox, never by the
- * plugins. A plugin disconnect must not stop a container (PROJECT.md §11).
+ * plugins. A plugin disconnect must not stop a container.
  */
 export const LifecyclePolicySchema = z.strictObject({
   autoStop: z.boolean(),

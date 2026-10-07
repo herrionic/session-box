@@ -16,7 +16,7 @@ const DEFAULT_INTERVAL_MS = 500;
 
 /**
  * Polls the container SSH endpoint until a session can be established. The
- * container is only reported as `running` after this succeeds (PROJECT.md §13).
+ * container is only reported as `running` after this succeeds.
  */
 export async function waitForSsh(options: WaitForSshOptions): Promise<void> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;

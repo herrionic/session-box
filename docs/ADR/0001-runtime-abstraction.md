@@ -6,11 +6,10 @@
 
 ## Context
 
-SessionBox is specified against Docker (PROJECT.md §8), but the MVP should not
-paint itself into a corner: containerd, Kubernetes and WSLc may become relevant
-in later phases (PROJECT.md §54). At the same time PROJECT.md §6 keeps those
-runtimes out of the MVP, and §49 forbids speculative abstractions before a
-second real use case exists.
+SessionBox is specified against Docker, but the MVP should not paint itself
+into a corner: containerd, Kubernetes and WSLc may become relevant in later
+phases. At the same time the MVP keeps those runtimes out, and speculative
+abstractions stay forbidden until a second real use case exists.
 
 The hard part of a runtime swap is not `create`/`delete`; it is **access**.
 The server needs SSH/SFTP/PTY into a container:
@@ -57,6 +56,6 @@ runtime selection in the public API (MVP is fixed to `SESSIONBOX_RUNTIME=docker`
 1. **No abstraction** — direct dockerode calls everywhere. Rejected: cheap
    today, expensive to unwind; contradicting the owner's request.
 2. **Full provider plugin framework now** — rejected as speculative
-   architecture (§49) with only one implementation.
+   architecture with only one implementation.
 3. **Separate runtime service (out-of-process)** — rejected: microservice
-   scope creep, against §6/§47.
+   scope creep, against the MVP scope and the ADR-first rule.

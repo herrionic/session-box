@@ -122,7 +122,7 @@ export class ContainerService {
 
       // One ephemeral SSH keypair per container: the private key stays encrypted
       // in the credential store, only the public key is injected into the
-      // container (PROJECT.md §14).
+      // container.
       const keyPair = generateSshKeyPair();
       await this.credentials.save(id, SSH_PRIVATE_KEY_CREDENTIAL, keyPair.privateKey);
 
@@ -437,8 +437,8 @@ export class ContainerService {
   }
 
   /**
-   * Reconciles persisted state with the runtime after a server restart
-   * (PROJECT.md §33). Containers that disappeared are marked `failed`;
+   * Reconciles persisted state with the runtime after a server restart.
+   * Containers that disappeared are marked `failed`;
    * containers that were started/stopped externally are synced.
    */
   async reconcile(): Promise<void> {
@@ -569,7 +569,7 @@ export class ContainerService {
 
   /**
    * Serializes operations per container so concurrent start/stop/delete calls
-   * cannot interleave (PROJECT.md §38). Operations on different containers run
+   * cannot interleave. Operations on different containers run
    * concurrently.
    */
   private withLock<T>(id: string, operation: () => Promise<T>): Promise<T> {

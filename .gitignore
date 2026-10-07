@@ -11,6 +11,9 @@ data/
 *.sqlite-journal
 *.db
 
+# internal/local-only material (docs, operator scripts) — never publish
+.local/
+
 # secrets / env
 .env
 .env.local

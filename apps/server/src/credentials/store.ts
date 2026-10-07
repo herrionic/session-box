@@ -4,7 +4,7 @@ import { open, seal } from "./sealing.ts";
 
 /**
  * Credential persistence boundary. Private keys never leave the server and are
- * never returned through the API (PROJECT.md §14). The store encrypts before
+ * never returned through the API. The store encrypts before
  * handing blobs to the repository; a SQLite repository persists the same
  * sealed strings across restarts.
  */

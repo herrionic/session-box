@@ -4,7 +4,7 @@ SessionBox is a spec-driven repository. Read before you write.
 
 ## Required reading (in order)
 
-1. `PROJECT.md` — product spec, MVP scope, non-goals
+1. `README.md` — what SessionBox is, quick start, boundaries
 2. `docs/ARCHITECTURE.md` — boundaries, topology, data flow
 3. `docs/ADR/` — accepted architectural decisions
 4. `packages/protocol/src/` — the only shared contract (server ↔ plugin ↔ web)
@@ -26,17 +26,15 @@ SessionBox is a spec-driven repository. Read before you write.
    server-side.
 5. **Validate at every boundary.** WebSocket and HTTP input is parsed with
    zod. Compile-time types are not a security boundary.
-6. **PROJECT.md §6 non-goals stay non-goals.** No Kubernetes, no
+6. **The non-goals stay non-goals.** No Kubernetes, no
    Redis/PostgreSQL, no message queues, no microservices, no MCP, no
    scheduler, no multi-agent orchestration, no heavyweight frameworks.
 7. **Security defaults are local-only.** Never publish container SSH ports,
    never mount the Docker socket into a container, never return credentials.
 8. **Major design changes require an ADR** proposal in `docs/ADR/` and
-   project-owner approval *before* implementation (PROJECT.md §47).
-9. **Never implement DSH/Pi integration from model memory.** Inspect the
-   exact installed harness source first and document the version tested
-   (PROJECT.md §48). Harness adapters are deferred until their source is
-   available.
+   project-owner approval *before* implementation.
+9. **Never implement harness integration from model memory.** Inspect the
+   exact installed harness source first and document the version tested.
 
 ## Workflow
 
@@ -54,15 +52,14 @@ Read → Plan → Implement → Test → Explain.
 - Local development (Windows, **no Docker installed**):
   `corepack pnpm install`, `corepack pnpm typecheck`, `corepack pnpm test`.
 - Docker-dependent work (building images, container lifecycle, SSH/SFTP,
-  terminal integration) runs on a remote Linux host:
-  sync with `scripts/sync.ps1`, operate with `scripts/remote.ps1`.
-  Host address, SSH user and key path are operator-local: keep them in
-  `.dev-notes.local.md` (gitignored) and never in tracked files.
-  The repository is deployed at `/srv/sessionbox`; dev topology via
-  `docker compose -f docker-compose.yml -f compose.dev.yml up -d`.
-  The dev topology runs `tsx watch` + Vite; note that `tsx watch` does not
-  always pick up files replaced by the tar sync — if a change seems ignored,
-  run `scripts/remote.ps1 restart server` (docker compose restart).
+  terminal integration) runs on a remote Linux host. Operator tooling and
+  notes (sync/ops scripts, host address, SSH user, key path) are local-only:
+  keep them in `.local/` and `.dev-notes.local.md` (both gitignored) and
+  never in tracked files.
+  The dev topology runs `tsx watch` + Vite via
+  `docker compose -f docker-compose.yml -f compose.dev.yml up -d`; note that
+  `tsx watch` does not always pick up files replaced by a tar sync — if a
+  change seems ignored, restart the server container.
   Never claim Docker behaviour is verified until it has been exercised
   there; mark such work as "pending remote verification" otherwise.
 - Never commit `node_modules/`, `dist/`, `.env`, `data/` or generated state.
@@ -76,5 +73,5 @@ packages/protocol  Shared zod schemas and types (the only wire contract)
 packages/shared    Small runtime-neutral helpers (ids, time)
 images/base        Container base image (OpenSSH + tooling, non-root agent user)
 docs/ADR           Architectural decision records
-scripts/           Remote sync / operations helpers
+scripts/           Deployment probe helpers
 ```

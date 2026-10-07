@@ -21,7 +21,7 @@ export interface ResolveContainerOptions {
 /**
  * Resolves the container bound to a Pi session: reuse the stored binding when
  * the container still exists, otherwise create one. The binding survives Pi
- * restarts so a resumed session keeps its workspace (PROJECT.md §29, §43.3).
+ * restarts so a resumed session keeps its workspace.
  */
 export async function resolveContainerId(options: ResolveContainerOptions): Promise<string> {
   if (options.pinnedContainerId !== undefined) {

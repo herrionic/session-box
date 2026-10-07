@@ -16,7 +16,7 @@ const PRIVATE_KEY_LABEL = "OPENSSH PRIVATE KEY";
 const BLOCK_SIZE = 8;
 
 /**
- * One ephemeral ed25519 keypair per container (PROJECT.md §14).
+ * One ephemeral ed25519 keypair per container.
  *
  * Node generates the key material (standard, testable), then the private key
  * is encoded into the OpenSSH private key format because ssh2 only accepts

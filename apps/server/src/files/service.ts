@@ -25,7 +25,7 @@ export interface ContainerFilesServiceOptions {
  * File-manager operations over SFTP. Paths are absolute container paths: the
  * container is the isolation boundary, so nothing is confined to the
  * workspace (same for the agent protocol). Relative paths and NUL bytes are
- * still rejected (PROJECT.md §27, §42).
+ * still rejected.
  */
 export class ContainerFilesService {
   private readonly containers: ContainerService;

@@ -13,7 +13,7 @@ export interface NetworkServiceOptions {
 }
 
 /**
- * Networks as a resource (PROJECT.md §10 model, extended): user-defined shared
+ * Networks as a resource: user-defined shared
  * networks that containers can additionally join. Every container always joins
  * the default network, which keeps the server able to reach it and makes
  * cross-session connectivity work out of the box; extra networks group

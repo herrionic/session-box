@@ -142,7 +142,7 @@ removes the credential entry.
 - The server container: trusted management plane, holds the Docker socket
   (host-root-equivalent). This is documented in ADR-0002.
 - Docker isolation is a development/agent-environment boundary, **not** a
-  hardened hostile-code container. See `PROJECT.md` §21.
+  hardened hostile-code container.
 
 ## 8. Testing strategy
 

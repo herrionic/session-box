@@ -17,7 +17,7 @@ const QuerySchema = z.strictObject({
 
 /**
  * WebSocket terminal: browser (xterm.js) ↔ SessionBox ↔ SSH PTY.
- * Every message is validated at runtime (PROJECT.md §17).
+ * Every message is validated at runtime.
  */
 export function registerTerminalRoutes(
   app: SessionBoxApp,

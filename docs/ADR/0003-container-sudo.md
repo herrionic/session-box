@@ -13,7 +13,7 @@ set `no-new-privileges`, which makes those operations impossible: `sudo` is a
 setuid binary and `no-new-privileges` blocks the privilege transition outright.
 
 The container is explicitly a development / agent-environment boundary, not
-hostile-code isolation (PROJECT.md §21). Devcontainers and Codespaces use
+hostile-code isolation. Devcontainers and Codespaces use
 passwordless sudo for exactly this reason.
 
 ## Decision

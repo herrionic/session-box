@@ -20,7 +20,7 @@ interface ContainerRow {
   runtime_ref: string | null;
 }
 
-/** SQLite-backed container records (PROJECT.md §33). */
+/** SQLite-backed container records. */
 export class SqliteContainerRepository implements ContainerRepository {
   constructor(private readonly database: DatabaseSync) {}
 

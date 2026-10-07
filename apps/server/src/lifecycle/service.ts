@@ -13,7 +13,7 @@ export interface LifecycleServiceOptions {
 const DEFAULT_INTERVAL_MS = 15_000;
 
 /**
- * Enforces the lifecycle policy owned by SessionBox (PROJECT.md §11):
+ * Enforces the lifecycle policy owned by SessionBox:
  * `autoStop` plus the optional idle timeout and maximum lifetime. Active
  * connections always win — a container with an open agent or terminal
  * connection is never auto-stopped.
