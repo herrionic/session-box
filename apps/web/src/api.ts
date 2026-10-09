@@ -171,8 +171,11 @@ export const api = {
 
   me: (): Promise<{ user: SessionUser }> => request("/api/auth/me"),
 
-  updateProfile: (displayName: string): Promise<{ user: SessionUser }> =>
-    request("/api/auth/me", { method: "PATCH", body: JSON.stringify({ displayName }) }),
+  updateProfile: (patch: {
+    username?: string;
+    displayName?: string;
+  }): Promise<{ user: SessionUser }> =>
+    request("/api/auth/me", { method: "PATCH", body: JSON.stringify(patch) }),
 
   changePassword: (currentPassword: string, newPassword: string): Promise<{ changed: boolean }> =>
     request("/api/auth/password", {

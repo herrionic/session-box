@@ -15,9 +15,14 @@ const LoginSchema = z.strictObject({
   password: z.string().min(1).max(256),
 });
 
-const ProfileSchema = z.strictObject({
-  displayName: z.string().min(1).max(64),
-});
+const ProfileSchema = z
+  .strictObject({
+    username: z.string().trim().min(1).max(64).optional(),
+    displayName: z.string().trim().min(1).max(64).optional(),
+  })
+  .refine((value) => value.username !== undefined || value.displayName !== undefined, {
+    message: "provide username or displayName",
+  });
 
 const PasswordSchema = z.strictObject({
   currentPassword: z.string().min(1).max(256),
@@ -62,7 +67,7 @@ export function registerAuthRoutes(app: SessionBoxApp, deps: { auth: AuthService
   app.patch("/api/auth/me", async (request) => {
     const user = await requireUser(request.principal, auth);
     const body = ProfileSchema.parse(request.body ?? {});
-    return { user: await auth.updateDisplayName(user.id, body.displayName) };
+    return { user: await auth.updateProfile(user.id, body) };
   });
 
   app.post("/api/auth/password", async (request) => {

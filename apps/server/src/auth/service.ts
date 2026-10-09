@@ -178,12 +178,21 @@ export class AuthService {
     return user === undefined ? undefined : toPublicUser(user);
   }
 
-  async updateDisplayName(userId: string, displayName: string): Promise<PublicUser> {
+  async updateProfile(
+    userId: string,
+    patch: { username?: string; displayName?: string },
+  ): Promise<PublicUser> {
     const user = await this.users.getById(userId);
     if (user === undefined) throw new SessionBoxError("NOT_FOUND", "user not found");
 
-    await this.users.updateDisplayName(userId, displayName, nowIso(this.now()));
-    return { ...toPublicUser(user), displayName };
+    const username = patch.username ?? user.username;
+    const displayName = patch.displayName ?? user.displayName;
+    await this.users.updateProfile(userId, { username, displayName }, nowIso(this.now()));
+    this.logger.info(
+      { event: "auth.profile.updated", userId, usernameChanged: patch.username !== undefined },
+      "profile updated",
+    );
+    return { id: user.id, username, displayName };
   }
 
   async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {

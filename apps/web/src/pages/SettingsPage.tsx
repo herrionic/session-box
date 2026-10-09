@@ -33,6 +33,7 @@ function ProfileCard({
   onUser: (user: SessionUser) => void;
 }): JSX.Element {
   const { t } = useI18n();
+  const [username, setUsername] = useState(user.username);
   const [displayName, setDisplayName] = useState(user.displayName);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -44,7 +45,10 @@ function ProfileCard({
     setMessage(null);
     setError(null);
     try {
-      const response = await api.updateProfile(displayName.trim());
+      const response = await api.updateProfile({
+        username: username.trim(),
+        displayName: displayName.trim(),
+      });
       onUser(response.user);
       setMessage(t("settings.profileSaved"));
     } catch (caught) {
@@ -58,8 +62,13 @@ function ProfileCard({
     <Card title={t("settings.profile")}>
       <form onSubmit={(event) => void save(event)} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
-          <Field label={t("settings.username")}>
-            <input className={`${INPUT_CLASS} opacity-60`} value={user.username} disabled />
+          <Field label={t("settings.username")} hint={t("settings.usernameHint")}>
+            <input
+              className={INPUT_CLASS}
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              autoComplete="username"
+            />
           </Field>
           <Field label={t("settings.displayName")}>
             <input
@@ -71,7 +80,10 @@ function ProfileCard({
         </div>
         {error !== null && <Alert>{error}</Alert>}
         <div className="flex items-center gap-3">
-          <Button type="submit" disabled={busy || displayName.trim() === ""}>
+          <Button
+            type="submit"
+            disabled={busy || username.trim() === "" || displayName.trim() === ""}
+          >
             {busy ? t("common.saving") : t("settings.saveProfile")}
           </Button>
           {message !== null && <span className="text-sm text-emerald-300">{message}</span>}

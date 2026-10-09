@@ -89,11 +89,11 @@ describe("single-owner user system", () => {
     database.close();
   });
 
-  async function login(password = "correct-horse"): Promise<string> {
+  async function login(password = "correct-horse", username = "admin"): Promise<string> {
     const response = await app.inject({
       method: "POST",
       url: "/api/auth/login",
-      payload: { username: "admin", password },
+      payload: { username, password },
     });
     expect(response.statusCode).toBe(200);
     const cookie = String(response.headers["set-cookie"]);
@@ -128,6 +128,53 @@ describe("single-owner user system", () => {
     });
     expect(renamed.statusCode).toBe(200);
     expect(renamed.json().user.displayName).toBe("Herry");
+  });
+
+  it("changes the login username and keeps the session valid", async () => {
+    const cookie = await login();
+
+    const renamed = await app.inject({
+      method: "PATCH",
+      url: "/api/auth/me",
+      headers: { cookie },
+      payload: { username: "  owner  " },
+    });
+    expect(renamed.statusCode).toBe(200);
+    expect(renamed.json().user).toMatchObject({ username: "owner", displayName: "admin" });
+
+    // Sessions are bound to the user, so the current cookie keeps working.
+    const me = await app.inject({ method: "GET", url: "/api/auth/me", headers: { cookie } });
+    expect(me.statusCode).toBe(200);
+    expect(me.json().user.username).toBe("owner");
+
+    // The old name no longer signs in; the new one does.
+    const oldLogin = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { username: "admin", password: "correct-horse" },
+    });
+    expect(oldLogin.statusCode).toBe(401);
+    await login("correct-horse", "owner");
+  });
+
+  it("rejects an empty username or an empty patch", async () => {
+    const cookie = await login();
+
+    const blank = await app.inject({
+      method: "PATCH",
+      url: "/api/auth/me",
+      headers: { cookie },
+      payload: { username: "   " },
+    });
+    expect(blank.statusCode).toBe(400);
+
+    const empty = await app.inject({
+      method: "PATCH",
+      url: "/api/auth/me",
+      headers: { cookie },
+      payload: {},
+    });
+    expect(empty.statusCode).toBe(400);
   });
 
   it("rejects a wrong password", async () => {

@@ -31,7 +31,11 @@ export interface UserRepository {
   create(user: UserRecord): Promise<void>;
   getByUsername(username: string): Promise<UserRecord | undefined>;
   getById(id: string): Promise<UserRecord | undefined>;
-  updateDisplayName(id: string, displayName: string, updatedAt: string): Promise<void>;
+  updateProfile(
+    id: string,
+    profile: { username: string; displayName: string },
+    updatedAt: string,
+  ): Promise<void>;
   updatePassword(id: string, passwordHash: string, updatedAt: string): Promise<void>;
 }
 
@@ -100,10 +104,14 @@ export class SqliteUserRepository implements UserRepository {
     return row === undefined ? undefined : toUser(row);
   }
 
-  async updateDisplayName(id: string, displayName: string, updatedAt: string): Promise<void> {
+  async updateProfile(
+    id: string,
+    profile: { username: string; displayName: string },
+    updatedAt: string,
+  ): Promise<void> {
     this.database
-      .prepare("UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?")
-      .run(displayName, updatedAt, id);
+      .prepare("UPDATE users SET username = ?, display_name = ?, updated_at = ? WHERE id = ?")
+      .run(profile.username, profile.displayName, updatedAt, id);
   }
 
   async updatePassword(id: string, passwordHash: string, updatedAt: string): Promise<void> {
