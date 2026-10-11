@@ -2,6 +2,8 @@
 
 **为 Coding Agent 提供独立的 Linux 执行环境。**
 
+> **SessionBox 仍处于 Alpha 阶段。** 已可部署和使用，目前主要面向个人自用和早期试用。仍有未完成的功能和已知问题，功能、API 和数据格式都可能变化，暂不保证向后兼容。欢迎试用和反馈，升级前请备份数据。
+
 Agent 可以在容器里安装依赖、修改配置、运行代码。环境出了问题，可以重建容器继续使用。多个 Agent 协作时，可以各用一个容器，并加入同一个网络，让容器中的服务互相访问。
 
 SessionBox 提供容器、网络和工具接入能力，可作为 multi-agent 系统的执行环境底座。
@@ -15,7 +17,7 @@ SessionBox 提供容器、网络和工具接入能力，可作为 multi-agent �
 - **Web 管理**：管理容器和网络、浏览文件、打开终端，手动检查或接管环境。
 - **账号与 Token**：支持账号登录和 API Token，供插件连接服务端。
 
-目前主要使用和验证的是 DSH 插件（[独立仓库](https://github.com/herrionic/dsh-session-box)）。当前通过源码和 Docker Compose 部署。
+目前主要使用和验证的是 DSH 插件（[独立仓库](https://github.com/herrionic/dsh-session-box)）。支持源码构建，也提供 GHCR 镜像发布流程。
 
 ## 快速启动
 
@@ -27,6 +29,44 @@ SessionBox 提供容器、网络和工具接入能力，可作为 multi-agent �
 - Docker Compose
 
 可以使用本机 Linux 环境或远程服务器。
+
+### 使用发布镜像
+
+发布镜像支持 Linux x86-64（`linux/amd64`）。首次发布完成且两个 GHCR Package 设为 Public 后，可以直接部署，无需安装 Node.js 或获取完整源码：
+
+```bash
+mkdir sessionbox && cd sessionbox
+curl -fL https://raw.githubusercontent.com/herrionic/session-box/main/compose.release.yml -o compose.release.yml
+docker compose -f compose.release.yml pull
+docker compose -f compose.release.yml up -d
+```
+
+服务端镜像为 `ghcr.io/herrionic/session-box`，Agent 基础镜像为 `ghcr.io/herrionic/session-box-base`。基础镜像在首次创建容器时按需拉取。
+
+打开 <http://localhost:8787>，按页面提示创建管理员账号。发布版默认只监听主机的 `127.0.0.1`；远程主机可通过 SSH 转发访问：
+
+```bash
+ssh -L 8787:127.0.0.1:8787 user@your-host
+```
+
+需要直接通过主机 IP 访问时，在 `.env` 中设置 `SESSIONBOX_BIND_ADDRESS=0.0.0.0`，再运行 `up -d`。端口可通过 `SESSIONBOX_PUBLISHED_PORT` 调整。
+
+默认跟随 `latest`。固定版本时，在 `.env` 中设置 `SESSIONBOX_VERSION=0.1.0`（示例，替换为已发布版本）；服务端与基础镜像使用同一版本。升级时更新版本号并执行：
+
+```bash
+docker compose -f compose.release.yml pull
+docker compose -f compose.release.yml up -d
+```
+
+固定版本对应的基础镜像会在创建新容器时按需拉取。使用 `latest` 时，更新基础镜像需要额外执行 `docker pull ghcr.io/herrionic/session-box-base:latest`；升级不会替换已有 Agent 容器，需要使用新环境时创建新容器。
+
+查看日志：
+
+```bash
+docker compose -f compose.release.yml logs -f server
+```
+
+### 从源码构建
 
 获取源码后，在仓库根目录执行：
 
@@ -41,7 +81,7 @@ docker compose up -d --build
 
 服务端状态保存在 `sessionbox-data` 数据卷中。
 
-查看日志：
+源码部署查看日志：
 
 ```bash
 docker compose logs -f server
@@ -155,6 +195,7 @@ docker compose -f docker-compose.yml -f compose.dev.yml up -d --build
 
 ## 文档
 
+- [发布 GHCR 镜像](docs/RELEASING.md)
 - [DSH 插件](https://github.com/herrionic/dsh-session-box)
 - [集成说明](docs/INTEGRATION.md)
 - [协议说明](docs/PROTOCOL.md)

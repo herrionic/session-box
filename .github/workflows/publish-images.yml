@@ -1,0 +1,168 @@
+name: Publish Docker images
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-images
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Prepare image tags
+        id: images
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repository="${GITHUB_REPOSITORY,,}"
+          server="ghcr.io/${repository}"
+          base="${server}-base"
+          version="sha-${GITHUB_SHA}"
+          latest=false
+          if [[ "$GITHUB_EVENT_NAME" == release ]]; then
+            version="${RELEASE_TAG#v}"
+            if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9a-z.-]+)?$ ]] || (( ${#version} > 128 )); then
+              echo 'Release tags must be vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-prerelease (lowercase, no build metadata).' >&2
+              exit 1
+            fi
+            if [[ "$PRERELEASE" != true && "$version" != *-* ]]; then
+              latest=true
+            fi
+          fi
+          {
+            echo "server=${server}:${version}"
+            echo "base=${base}:${version}"
+            echo "version=${version}"
+            echo 'server_tags<<TAGS'
+            echo "${server}:${version}"
+            if [[ "$latest" == true ]]; then echo "${server}:latest"; fi
+            echo TAGS
+            echo 'base_tags<<TAGS'
+            echo "${base}:${version}"
+            if [[ "$latest" == true ]]; then echo "${base}:latest"; fi
+            echo TAGS
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v4.4.1
+
+      - name: Build base image for verification
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: ./images/base
+          platforms: linux/amd64
+          load: true
+          tags: ${{ steps.images.outputs.base }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.images.outputs.version }}
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,mode=max,scope=base
+
+      - name: Build server image for verification
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: ${{ steps.images.outputs.server }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.images.outputs.version }}
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
+
+      - name: Verify server, container creation and SSH terminal
+        env:
+          SERVER_IMAGE: ${{ steps.images.outputs.server }}
+          BASE_IMAGE: ${{ steps.images.outputs.base }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$(openssl rand -hex 24)"
+          echo "::add-mask::$token"
+          clients="$(jq -cn --arg token "$token" '[{id:"smoke",token:$token,permissions:["*"]}]')"
+          cleanup() {
+            docker logs sessionbox-smoke || true
+            docker rm -f sessionbox-smoke || true
+          }
+          trap cleanup EXIT
+          docker run -d --name sessionbox-smoke \
+            -p 127.0.0.1:8787:8787 \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -e SESSIONBOX_BASE_IMAGE="$BASE_IMAGE" \
+            -e SESSIONBOX_CLIENTS="$clients" \
+            "$SERVER_IMAGE"
+          for attempt in {1..60}; do
+            if curl --fail --silent --max-time 2 http://127.0.0.1:8787/api/health > "$RUNNER_TEMP/health.json"; then
+              break
+            fi
+            sleep 1
+          done
+          jq -e '.status == "ok"' "$RUNNER_TEMP/health.json"
+          curl --fail --silent --show-error --max-time 10 http://127.0.0.1:8787/ > "$RUNNER_TEMP/index.html"
+          grep -qi '<!doctype html>' "$RUNNER_TEMP/index.html"
+          container="$(curl --fail --silent --show-error --max-time 90 \
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+            -d '{"name":"release-smoke"}' http://127.0.0.1:8787/api/containers)"
+          echo "$container" | jq -e '.status == "running"'
+          id="$(echo "$container" | jq -er '.id')"
+          node scripts/terminal-probe.mjs \
+            "ws://127.0.0.1:8787/api/ws/terminal/${id}?token=${token}" \
+            'test "$(id -un)" = agent && test "$(sudo -n id -u)" = 0 && printf "SESSIONBOX_SMOKE_OK\n"' \
+            | tee "$RUNNER_TEMP/terminal.log"
+          tr -d '\r' < "$RUNNER_TEMP/terminal.log" | grep -qx SESSIONBOX_SMOKE_OK
+          curl --fail --silent --show-error --max-time 30 -X DELETE \
+            -H "Authorization: Bearer $token" "http://127.0.0.1:8787/api/containers/${id}"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish base image
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: ./images/base
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.images.outputs.base_tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.images.outputs.version }}
+          cache-from: type=gha,scope=base
+
+      - name: Publish server image
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.images.outputs.server_tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.images.outputs.version }}
+          cache-from: type=gha,scope=server

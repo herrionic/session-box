@@ -1,0 +1,37 @@
+# Standalone deployment using GHCR images (no source checkout or local build).
+# SESSIONBOX_VERSION selects the same release for the server and agent image.
+name: sessionbox
+
+services:
+  server:
+    image: ghcr.io/herrionic/session-box:${SESSIONBOX_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      - "${SESSIONBOX_BIND_ADDRESS:-127.0.0.1}:${SESSIONBOX_PUBLISHED_PORT:-8787}:8787"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - sessionbox-data:/data
+    environment:
+      SESSIONBOX_HOST: "0.0.0.0"
+      SESSIONBOX_PORT: "8787"
+      SESSIONBOX_DATA_DIR: /data
+      SESSIONBOX_RUNTIME: docker
+      SESSIONBOX_DOCKER_SOCKET: /var/run/docker.sock
+      SESSIONBOX_DOCKER_NETWORK: sessionbox
+      SESSIONBOX_BASE_IMAGE: ghcr.io/herrionic/session-box-base:${SESSIONBOX_VERSION:-latest}
+      SESSIONBOX_LOG_LEVEL: ${SESSIONBOX_LOG_LEVEL:-info}
+      SESSIONBOX_CLIENTS: ${SESSIONBOX_CLIENTS:-}
+      SESSIONBOX_ADMIN_USERNAME: ${SESSIONBOX_ADMIN_USERNAME:-admin}
+      SESSIONBOX_ADMIN_PASSWORD: ${SESSIONBOX_ADMIN_PASSWORD:-}
+      SESSIONBOX_LIFECYCLE_INTERVAL_MS: ${SESSIONBOX_LIFECYCLE_INTERVAL_MS:-15000}
+      SESSIONBOX_MASTER_KEY: ${SESSIONBOX_MASTER_KEY:-}
+    networks:
+      - sessionbox
+
+networks:
+  sessionbox:
+    name: sessionbox
+    driver: bridge
+
+volumes:
+  sessionbox-data:
